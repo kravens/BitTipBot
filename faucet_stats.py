@@ -8,14 +8,14 @@ import json
 import os
 
 # SQLite database paths (from config.yaml)
-DB_PATH = "bot.db"  # Main user database
-TRANSACTIONS_PATH = "transactions.db"  # Transactions database
+DB_PATH = "data/bot.db"  # Main user database
+TRANSACTIONS_PATH = "data/transactions.db"  # Transactions database
 
 # Headers for API requests
-headers = {
-    "X-Api-Key": ADMIN_KEY,
-    "Content-type": "application/json"
-}
+#headers = {
+#    "X-Api-Key": ADMIN_KEY,
+#    "Content-type": "application/json"
+#}
 
 def get_transactions_from_sqlite() -> List[Dict]:
     """Get all faucet transactions from the local SQLite database"""
@@ -27,8 +27,8 @@ def get_transactions_from_sqlite() -> List[Dict]:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Get transactions from the last 12 months where type is 'faucet'
-    twelve_months_ago = int((datetime.now() - timedelta(days=365)).timestamp())
+    # Get transactions from the last week where type is 'faucet'
+    twelve_months_ago = int((datetime.now() - timedelta(days=7)).timestamp())
     query = """
     SELECT 
         from_user as sender,
@@ -132,12 +132,12 @@ def main():
     distributions, receipts, balance = analyze_faucet_transactions()
     
     # Display results
-    print("\nFaucet Statistics for the Last 12 Months:")
+    print("\nFaucet Statistics for the Last 7 Days:")
     print("-" * 50)
     
-    print(format_stats(distributions, "Total Amount Distributed per User"))
-    print(format_stats(receipts, "Total Amount Received per User"))
-    print(format_stats(balance, "Balance Amount per User (negative = lurker)"))
+    print(format_stats(distributions, "Total Amount Distributed per User of last 7 days"))
+    print(format_stats(receipts, "Total Amount Received per User of last 7 days"))
+    print(format_stats(balance, "Balance of Faucets per User of last 7 days (negative = lurker)"))
 
 # Run
 main()
