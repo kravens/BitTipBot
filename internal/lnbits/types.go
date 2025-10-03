@@ -90,19 +90,26 @@ type InvoiceParams struct {
 	Webhook             string `json:"webhook,omitempty"`              // the webhook to fire back to when payment is received.
 	DescriptionHash     string `json:"description_hash,omitempty"`     // the invoice description hash.
 	UnhashedDescription string `json:"unhashed_description,omitempty"` // the unhashed invoice description.
+	Bolt11              string `json:"bolt11,omitempty"`               // Bolt11 is the BOLT11 invoice string LNbits v1.2.1 expects when creating/payments.
 }
 
 type PaymentParams struct {
 	Out    bool   `json:"out"`
-	Bolt11 string `json:"bolt11"`
+	Bolt11 string `json:"bolt11,omitempty"`
+	// keep legacy name for incoming structs if caller still uses it
+	PaymentRequest string `json:"payment_request,omitempty"`
 }
+
 type PayParams struct {
 	// the BOLT11 payment request you want to pay.
-	PaymentRequest string `json:"payment_request"`
+	PaymentRequest string `json:"payment_request,omitempty"`
+	// accept bolt11 as alternative name too
+	Bolt11 string `json:"bolt11,omitempty"`
 
 	// custom data you may want to associate with this invoice. optional.
 	PassThru map[string]interface{} `json:"passThru"`
 }
+
 
 type TransferParams struct {
 	Memo         string `json:"memo"`           // the transfer description.
@@ -153,8 +160,11 @@ type Payments []Payment
 
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
-	PaymentRequest string `json:"payment_request"`
+	PaymentRequest string `json:"payment_request,omitempty"`
+	// Bolt11 is the canonical invoice field in LNbits v1.2.1
+	Bolt11         string `json:"bolt11,omitempty"`
 }
+
 
 // from fiatjaf/lnurl-go
 func (u User) LinkingKey(domain string) (*btcec.PrivateKey, *btcec.PublicKey) {
