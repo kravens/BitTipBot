@@ -197,11 +197,21 @@ func (bot *TipBot) createInvoiceWithEvent(ctx context.Context, user *lnbits.User
 		log.Errorln(errmsg)
 		return InvoiceEvent{}, err
 	}
+
+	// normalize invoice string: prefer bolt11, fallback to payment_request
+	invStr := invoice.Bolt11
+	if invStr == "" {
+		invStr = invoice.PaymentRequest
+	}
+
 	invoiceEvent := InvoiceEvent{
-		Invoice: &Invoice{PaymentHash: invoice.PaymentHash,
+		Invoice: &Invoice{
+			PaymentHash:    invoice.PaymentHash,
 			PaymentRequest: invoice.PaymentRequest,
+			Bolt11:         invStr,
 			Amount:         amount,
-			Memo:           memo},
+			Memo:           memo,
+		},
 		User:         user,
 		Callback:     callback,
 		CallbackData: callbackData,
@@ -212,6 +222,7 @@ func (bot *TipBot) createInvoiceWithEvent(ctx context.Context, user *lnbits.User
 	runtime.IgnoreError(bot.Bunt.Set(invoiceEvent))
 	return invoiceEvent, nil
 }
+
 
 func (bot *TipBot) notifyInvoiceReceivedEvent(event Event) {
 	invoiceEvent := event.(*InvoiceEvent)
