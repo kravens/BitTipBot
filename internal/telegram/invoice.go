@@ -74,10 +74,12 @@ func AssertEventType(event Event, eventType EventType) error {
 
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
-	PaymentRequest string `json:"payment_request"`
+	PaymentRequest string `json:"payment_request,omitempty"`
+	Bolt11         string `json:"bolt11,omitempty"`
 	Amount         int64  `json:"amount"`
 	Memo           string `json:"memo"`
 }
+
 type InvoiceEvent struct {
 	*Invoice
 	*storage.Base
