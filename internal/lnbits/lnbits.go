@@ -1,5 +1,5 @@
 package lnbits
-
+// KR update all API calls for LNBits v1.2.1+
 import (
 	"fmt"
 	"time"
@@ -25,7 +25,7 @@ func NewClient(key, url string) *Client {
 
 // GetUser returns user information
 func (c *Client) GetUser(userId string) (user User, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/users/"+userId, c.header, nil)
+	resp, err := req.Post(c.url+"/users/api/v1/user/"+userId, c.header, nil)
 	if err != nil {
 		return
 	}
@@ -43,7 +43,7 @@ func (c *Client) GetUser(userId string) (user User, err error) {
 
 // CreateUserWithInitialWallet creates new user with initial wallet
 func (c *Client) CreateUserWithInitialWallet(userName, walletName, adminId string, email string) (wal User, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/users", c.header, req.BodyJSON(struct {
+	resp, err := req.Post(c.url+"/users/api/v1/users", c.header, req.BodyJSON(struct {
 		WalletName string `json:"wallet_name"`
 		AdminId    string `json:"admin_id"`
 		UserName   string `json:"user_name"`
@@ -65,7 +65,7 @@ func (c *Client) CreateUserWithInitialWallet(userName, walletName, adminId strin
 
 // CreateWallet creates a new wallet.
 func (c *Client) CreateWallet(userId, walletName, adminId string) (wal Wallet, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/wallets", c.header, req.BodyJSON(struct {
+	resp, err := req.Post(c.url+"/users/api/v1/wallets", c.header, req.BodyJSON(struct {
 		UserId     string `json:"user_id"`
 		WalletName string `json:"wallet_name"`
 		AdminId    string `json:"admin_id"`
@@ -182,7 +182,7 @@ func (c Client) Payment(w Wallet, payment_hash string) (payment LNbitsPayment, e
 
 // Wallets returns all wallets belonging to an user
 func (c Client) Wallets(w User) (wtx []Wallet, err error) {
-	resp, err := req.Get(c.url+"/usermanager/api/v1/wallets/"+w.ID, c.header, nil)
+	resp, err := req.Get(c.url+"/api/v1/wallets/"+w.ID, c.header, nil)
 	if err != nil {
 		return
 	}
