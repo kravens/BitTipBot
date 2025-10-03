@@ -37,7 +37,8 @@ type Webhook struct {
 	Fee           int64       `json:"fee"`
 	Memo          string      `json:"memo"`
 	Time          int64       `json:"time"`
-	Bolt11        string      `json:"bolt11"`
+	Bolt11        string      `json:"bolt11,omitempty"`
+	PaymentRequest string     `json:"payment_request,omitempty"` // legacy
 	Preimage      string      `json:"preimage"`
 	PaymentHash   string      `json:"payment_hash"`
 	Extra         struct{}    `json:"extra"`
@@ -45,6 +46,7 @@ type Webhook struct {
 	Webhook       string      `json:"webhook"`
 	WebhookStatus interface{} `json:"webhook_status"`
 }
+
 
 func NewServer(bot *telegram.TipBot) *Server {
 	srv := &http.Server{
@@ -86,6 +88,15 @@ func (w *Server) receive(writer http.ResponseWriter, request *http.Request) {
 	// need to delete the header otherwise the Decode will fail
 	request.Header.Del("content-length")
 	err := json.NewDecoder(request.Body).Decode(&webhookEvent)
+	// normalize invoice field names (bolt11 preferred)
+	if webhookEvent.Bolt11 == "" && webhookEvent.PaymentRequest != "" {
+	    webhookEvent.Bolt11 = webhookEvent.PaymentRequest
+	}
+	if webhookEvent.Bolt11 == "" {
+	    log.Errorf("[Webhook] Missing bolt11/payment_request in payload")
+	    writer.WriteHeader(400)
+	    return
+	}
 	if err != nil {
 		log.Errorf("[Webhook] Error decoding request: %s", err.Error())
 		writer.WriteHeader(400)
