@@ -86,6 +86,7 @@ type InvoiceEvent struct {
 	User           *lnbits.User `json:"user"`                      // the user that is being paid
 	Message        *tb.Message  `json:"message,omitempty"`         // the message that the invoice replies to
 	InvoiceMessage *tb.Message  `json:"invoice_message,omitempty"` // the message that displays the invoice
+	Bolt11         *tb.Message  `json:"bolt11,omitempty"`          // KR added Bolt11
 	LanguageCode   string       `json:"languagecode"`              // language code of the user
 	Callback       int          `json:"func"`                      // which function to call if the invoice is paid
 	CallbackData   string       `json:"callbackdata"`              // add some data for the callback
