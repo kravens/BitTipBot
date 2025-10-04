@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LightningTipBot/LightningTipBot/internal/satdress"
+	"github.com/kravens/BitTipBot/internal/satdress"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 
@@ -97,12 +97,12 @@ type PaymentParams struct {
 	Out    bool   `json:"out"`
 	Bolt11 string `json:"bolt11,omitempty"`
 	// keep legacy name for incoming structs if caller still uses it
-	PaymentRequest string `json:"payment_request,omitempty"`
+	PaymentRequest string `json:"bolt11,omitempty"`
 }
 
 type PayParams struct {
 	// the BOLT11 payment request you want to pay.
-	PaymentRequest string `json:"payment_request,omitempty"`
+	PaymentRequest string `json:"bolt11,omitempty"`
 	// accept bolt11 as alternative name too
 	Bolt11 string `json:"bolt11,omitempty"`
 
@@ -160,7 +160,7 @@ type Payments []Payment
 
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
-	PaymentRequest string `json:"payment_request,omitempty"`
+	PaymentRequest string `json:"bolt11,omitempty"`
 	// Bolt11 is the canonical invoice field in LNbits v1.2.1
 	Bolt11         string `json:"bolt11,omitempty"`
 }
