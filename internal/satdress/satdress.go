@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/LightningTipBot/LightningTipBot/internal/network"
+	"github.com/kravens/BitTipBot/internal/network"
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -163,7 +163,7 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 		// bot.Cache.Set(shopView.ID, shopView, &store.Options{Expiration: 24 * time.Hour})
 		checkInvoiceParams := CheckInvoiceParams{
 			Backend: params.Backend,
-			PR:      gjson.ParseBytes(b).Get("payment_request").String(),
+			PR:      gjson.ParseBytes(b).Get("bolt11").String(),
 			Hash:    []byte(gjson.ParseBytes(b).Get("r_hash").String()),
 			Status:  "OPEN",
 		}
@@ -216,7 +216,7 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 		}
 		checkInvoiceParams := CheckInvoiceParams{
 			Backend: params.Backend,
-			PR:      gjson.ParseBytes(b).Get("payment_request").String(),
+			PR:      gjson.ParseBytes(b).Get("bolt11").String(),
 			Hash:    []byte(gjson.ParseBytes(b).Get("payment_hash").String()),
 			Status:  "OPEN",
 		}
