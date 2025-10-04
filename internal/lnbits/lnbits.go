@@ -25,7 +25,7 @@ func NewClient(key, url string) *Client {
 
 // GetUser returns user information
 func (c *Client) GetUser(userId string) (user User, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/users/"+userId, c.header, nil)
+	resp, err := req.Post(c.url+"/users/api/v1/user"+userId, c.header, nil)
 	if err != nil {
 		return
 	}
@@ -43,7 +43,7 @@ func (c *Client) GetUser(userId string) (user User, err error) {
 
 // CreateUserWithInitialWallet creates new user with initial wallet
 func (c *Client) CreateUserWithInitialWallet(userName, walletName, adminId string, email string) (wal User, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/users", c.header, req.BodyJSON(struct {
+	resp, err := req.Post(c.url+"/users/api/v1/user", c.header, req.BodyJSON(struct {
 		WalletName string `json:"wallet_name"`
 		AdminId    string `json:"admin_id"`
 		UserName   string `json:"user_name"`
@@ -65,7 +65,7 @@ func (c *Client) CreateUserWithInitialWallet(userName, walletName, adminId strin
 
 // CreateWallet creates a new wallet.
 func (c *Client) CreateWallet(userId, walletName, adminId string) (wal Wallet, err error) {
-	resp, err := req.Post(c.url+"/usermanager/api/v1/wallets", c.header, req.BodyJSON(struct {
+	resp, err := req.Post(c.url+"/users/api/v1/user/"+userId+"/wallet", c.header, req.BodyJSON(struct {
 		UserId     string `json:"user_id"`
 		WalletName string `json:"wallet_name"`
 		AdminId    string `json:"admin_id"`
