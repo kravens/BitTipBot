@@ -153,7 +153,8 @@ type Payments []Payment
 
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
-	PaymentRequest string `json:"payment_request"`
+	// PaymentRequest string `json:"payment_request"`
+	PaymentRequest string `json:"bolt11"` // Update for LNBits v1.2.1
 }
 
 // from fiatjaf/lnurl-go
