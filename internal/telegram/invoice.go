@@ -167,7 +167,7 @@ func (bot *TipBot) invoiceHandler(ctx intercept.Context) (intercept.Context, err
 	// create qr code
 	qr, err := qrcode.Encode(invoice.PaymentRequest, qrcode.Medium, 256)
 	if err != nil {
-		errmsg := fmt.Sprintf("[/invoice] Failed to create QR code for invoice: %s", err.Error())
+		errmsg := fmt.Sprintf("[/invoice] Failed to create QR code for invoice: %s \n PaymentRequest: %s", err.Error(), invoice.PaymentRequest)
 		bot.tryEditMessage(creatingMsg, Translate(ctx, "errorTryLaterMessage"))
 		log.Errorln(errmsg)
 		return ctx, err
@@ -178,7 +178,7 @@ func (bot *TipBot) invoiceHandler(ctx intercept.Context) (intercept.Context, err
 
 	// send the invoice data to user
 	bot.trySendMessage(m.Sender, &tb.Photo{File: tb.File{FileReader: bytes.NewReader(qr)}, Caption: fmt.Sprintf("`%s`", invoice.PaymentRequest)})
-	log.Printf("[/invoice] Incvoice created. User: %s, amount: %d sat.", userStr, amount)
+	log.Printf("[/invoice] Invoice created. User: %s, amount: %d sat.", userStr, amount)
 	return ctx, nil
 }
 
