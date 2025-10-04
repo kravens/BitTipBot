@@ -199,16 +199,16 @@ func (bot *TipBot) createInvoiceWithEvent(ctx context.Context, user *lnbits.User
 	}
 
 	// normalize invoice string: prefer bolt11, fallback to payment_request
-	invStr := invoice.Bolt11
-	if invStr == "" {
-		invStr = invoice.PaymentRequest
-	}
+	//invStr := invoice.Bolt11
+	//if invStr == "" {
+	//	invStr = invoice.PaymentRequest
+	//}
 
 	invoiceEvent := InvoiceEvent{
 		Invoice: &Invoice{
 			PaymentHash:    invoice.PaymentHash,
-			PaymentRequest: invStr,
-			Bolt11:         invStr,
+			PaymentRequest: invoice.PaymentRequest,
+			Bolt11:         invoice.Bolt11,
 			Amount:         amount,
 			Memo:           memo,
 		},
