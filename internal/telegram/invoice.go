@@ -207,7 +207,7 @@ func (bot *TipBot) createInvoiceWithEvent(ctx context.Context, user *lnbits.User
 	invoiceEvent := InvoiceEvent{
 		Invoice: &Invoice{
 			PaymentHash:    invoice.PaymentHash,
-			PaymentRequest: invoice.PaymentRequest,
+			PaymentRequest: invStr,
 			Bolt11:         invStr,
 			Amount:         amount,
 			Memo:           memo,
