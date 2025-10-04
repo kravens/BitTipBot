@@ -7,20 +7,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
+	"github.com/kravens/BitTipBot/internal/telegram/intercept"
 	"github.com/nbd-wtf/go-nostr"
 
-	"github.com/LightningTipBot/LightningTipBot/internal/errors"
-	"github.com/LightningTipBot/LightningTipBot/internal/storage"
+	"github.com/kravens/BitTipBot/internal/errors"
+	"github.com/kravens/BitTipBot/internal/storage"
 
-	"github.com/LightningTipBot/LightningTipBot/internal"
+	"github.com/kravens/BitTipBot/internal"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/LightningTipBot/LightningTipBot/internal/i18n"
-	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
-	"github.com/LightningTipBot/LightningTipBot/internal/runtime"
-	"github.com/LightningTipBot/LightningTipBot/internal/str"
+	"github.com/kravens/BitTipBot/internal/i18n"
+	"github.com/kravens/BitTipBot/internal/lnbits"
+	"github.com/kravens/BitTipBot/internal/runtime"
+	"github.com/kravens/BitTipBot/internal/str"
 	"github.com/skip2/go-qrcode"
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 )
@@ -74,7 +74,7 @@ func AssertEventType(event Event, eventType EventType) error {
 
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
-	PaymentRequest string `json:"payment_request,omitempty"`
+	PaymentRequest string `json:"bolt11,omitempty"`
 	Bolt11         string `json:"bolt11,omitempty"`
 	Amount         int64  `json:"amount"`
 	Memo           string `json:"memo"`
@@ -167,7 +167,7 @@ func (bot *TipBot) invoiceHandler(ctx intercept.Context) (intercept.Context, err
 	}
 
 	// create qr code
-	qr, err := qrcode.Encode(invoice.PaymentRequest, qrcode.Medium, 256)
+	qr, err := qrcode.Encode(invoice.Bolt11, qrcode.Medium, 256)
 	if err != nil {
 		errmsg := fmt.Sprintf("[/invoice] Failed to create QR code for invoice: %s", err.Error())
 		bot.tryEditMessage(creatingMsg, Translate(ctx, "errorTryLaterMessage"))
