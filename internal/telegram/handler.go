@@ -389,7 +389,7 @@ func (bot TipBot) getHandler() []InterceptionWrapper {
 			},
 		},
 		{
-			Endpoints: []interface{}{"/faucet", "/crane", "/spigot", "/tap", "/hydrant", "/funding" "/zapfhahn", "/kraan", "/grifo", "/fonds", "/hana", "/keran", "/distribuzione", "/torneira", "/fıçı"},
+			Endpoints: []interface{}{"/faucet", "/crane", "/spigot", "/tap", "/hydrant", "/funding", "/zapfhahn", "/kraan", "/grifo", "/fonds", "/hana", "/keran", "/distribuzione", "/torneira", "/fıçı"},
 			Handler:   bot.faucetHandler,
 			Interceptor: &Interceptor{
 				Before: []intercept.Func{
