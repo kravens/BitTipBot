@@ -149,7 +149,7 @@ func (bot TipBot) commandTranslationMap(ctx context.Context, command string) con
 	case "torneira", "cofrinho":
 		ctx = context.WithValue(ctx, "publicLanguageCode", "pt")
 		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "br"))
-	case "fıçı", "bağışkutusu":
+	case "fici", "bagiskutusu":
 		ctx = context.WithValue(ctx, "publicLanguageCode", "tr")
 		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "tr"))
 	}
@@ -182,7 +182,7 @@ func (bot TipBot) anyQueryHandler(ctx intercept.Context) (intercept.Context, err
 		strings.HasPrefix(text, "keran") ||
 		strings.HasPrefix(text, "distribuzione") ||
 		strings.HasPrefix(text, "torneira") ||
-		strings.HasPrefix(text, "fıçı") {
+		strings.HasPrefix(text, "fici") {
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
@@ -196,7 +196,7 @@ func (bot TipBot) anyQueryHandler(ctx intercept.Context) (intercept.Context, err
 		strings.HasPrefix(text, "tippikulho") ||
 		strings.HasPrefix(text, "salvadanaio") ||
 		strings.HasPrefix(text, "cofrinho") ||
-		strings.HasPrefix(text, "bağışkutusu") {
+		strings.HasPrefix(text, "bagiskutusu") {
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
