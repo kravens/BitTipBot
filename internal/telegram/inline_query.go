@@ -125,15 +125,33 @@ func (bot TipBot) commandTranslationMap(ctx context.Context, command string) con
 	// case "faucet":
 	// 	ctx = context.WithValue(ctx, "publicLanguageCode", "en")
 	// 	ctx = context.WithValue(ctx, "publicLocalizer", i18n.NewLocalizer(i18n.Bundle, "en"))
+	case "crane", "spigot", "tap", "hydrant", "funding":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "en")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "en"))
 	case "zapfhahn", "spendendose":
 		ctx = context.WithValue(ctx, "publicLanguageCode", "de")
 		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "de"))
-	case "kraan":
+	case "kraan", "fonds":
 		ctx = context.WithValue(ctx, "publicLanguageCode", "nl")
 		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "nl"))
 	case "grifo":
 		ctx = context.WithValue(ctx, "publicLanguageCode", "es")
 		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "es"))
+	case "hana", "tippikulho":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "fi")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "fi"))
+	case "keran":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "id")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "id"))
+	case "distribuzione", "salvadanaio":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "it")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "it"))
+	case "torneira", "cofrinho":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "pt")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "br"))
+	case "fıçı", "bağışkutusu":
+		ctx = context.WithValue(ctx, "publicLanguageCode", "tr")
+		ctx = context.WithValue(ctx, "publicLocalizer", i18n2.NewLocalizer(i18n.Bundle, "tr"))
 	}
 	return ctx
 }
@@ -152,14 +170,35 @@ func (bot TipBot) anyQueryHandler(ctx intercept.Context) (intercept.Context, err
 		return bot.handleInlineSendQuery(ctx)
 	}
 
-	if strings.HasPrefix(text, "faucet") || strings.HasPrefix(text, "zapfhahn") || strings.HasPrefix(text, "kraan") || strings.HasPrefix(text, "grifo") {
+	if strings.HasPrefix(text, "faucet") ||
+		strings.HasPrefix(text, "zapfhahn") ||
+		strings.HasPrefix(text, "kraan") ||
+		strings.HasPrefix(text, "grifo") ||
+		strings.HasPrefix(text, "crane") ||
+		strings.HasPrefix(text, "spigot") ||
+		strings.HasPrefix(text, "tap") ||
+		strings.HasPrefix(text, "hydrant")
+		strings.HasPrefix(text, "hana") ||
+		strings.HasPrefix(text, "keran") ||
+		strings.HasPrefix(text, "distribuzione") ||
+		strings.HasPrefix(text, "torneira") ||
+		strings.HasPrefix(text, "fıçı")
+	{
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
 		}
 		return bot.handleInlineFaucetQuery(ctx)
 	}
-	if strings.HasPrefix(text, "tipjar") || strings.HasPrefix(text, "spendendose") {
+	if strings.HasPrefix(text, "tipjar") ||
+		strings.HasPrefix(text, "spendendose") ||
+		strings.HasPrefix(text, "fonds") ||
+		strings.HasPrefix(text, "funding") ||
+		strings.HasPrefix(text, "tippikulho") ||
+		strings.HasPrefix(text, "salvadanaio") ||
+		strings.HasPrefix(text, "cofrinho") ||
+		strings.HasPrefix(text, "bağışkutusu")
+	{
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
