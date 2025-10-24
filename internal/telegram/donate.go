@@ -132,6 +132,16 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 func (bot TipBot) parseCmdDonHandler(ctx intercept.Context) error {
 	m := ctx.Message()
 
+	// If this message is a reply to another user's message (a post tip), do not
+	// convert it into a /donate action. Donations to the fixed lightning address
+	// should only happen for explicit donation commands, not when tipping other users' posts.
+	if m.ReplyTo != nil && m.ReplyTo.Sender != nil && m.Sender != nil && m.ReplyTo.Sender.ID != m.Sender.ID {
+		// Do not intercept — allow original /tip or /send flow to continue.
+		// We return a non-nil error to indicate we skipped donation conversion.
+		// The caller of this handler should treat non-nil as "did not handle".
+		return fmt.Errorf("skipped donation conversion for reply-to-other-user")
+	}
+
 	// try to extract amount (if not present, decodeAmountFromCommand will return error)
 	amount, err := decodeAmountFromCommand(m.Text)
 	if err != nil || amount < 1 {
