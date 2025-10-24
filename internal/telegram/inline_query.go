@@ -177,13 +177,12 @@ func (bot TipBot) anyQueryHandler(ctx intercept.Context) (intercept.Context, err
 		strings.HasPrefix(text, "crane") ||
 		strings.HasPrefix(text, "spigot") ||
 		strings.HasPrefix(text, "tap") ||
-		strings.HasPrefix(text, "hydrant")
+		strings.HasPrefix(text, "hydrant") ||
 		strings.HasPrefix(text, "hana") ||
 		strings.HasPrefix(text, "keran") ||
 		strings.HasPrefix(text, "distribuzione") ||
 		strings.HasPrefix(text, "torneira") ||
-		strings.HasPrefix(text, "fıçı")
-	{
+		strings.HasPrefix(text, "fıçı") {
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
@@ -197,8 +196,7 @@ func (bot TipBot) anyQueryHandler(ctx intercept.Context) (intercept.Context, err
 		strings.HasPrefix(text, "tippikulho") ||
 		strings.HasPrefix(text, "salvadanaio") ||
 		strings.HasPrefix(text, "cofrinho") ||
-		strings.HasPrefix(text, "bağışkutusu")
-	{
+		strings.HasPrefix(text, "bağışkutusu") {
 		if len(strings.Split(text, " ")) > 1 {
 			c := strings.Split(text, " ")[0]
 			ctx.Context = bot.commandTranslationMap(ctx, c)
