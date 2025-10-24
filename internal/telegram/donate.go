@@ -150,7 +150,10 @@ func (bot TipBot) parseCmdDonHandler(ctx intercept.Context) error {
 		m.Text = "/donate"
 	}
 	// call donation handler which will perform the actual transfer
-	_ = bot.donationHandler(ctx)
+	_, err = bot.donationHandler(ctx)
+	if err != nil {
+		log.Errorln("donation handler returned error:", err)
+	}
 
 	// returning nil will abort the parent context (so original /tip or /send stops)
 	return nil
