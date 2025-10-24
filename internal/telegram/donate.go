@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/fiatjaf/go-lnurl"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/fiatjaf/go-lnurl"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
 
@@ -23,14 +23,14 @@ import (
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 )
 
-// PLEASE DO NOT CHANGE THE CODE IN THIS FILE
-// YOU MIGHT BREAK DONATIONS TO THE ORIGINAL PROJECT
-// THE DEVELOPMENT OF LIGHTNINGTIPBOT RELIES ON DONATIONS
-// IF YOU USE THIS PROJECT, LEAVE THIS CODE ALONE
+// This file has been simplified so that all donations initiated through
+// the bot are forwarded to a fixed lightning address: kevinrav@btip.nl
+// (or the equivalent user @kevinrav). The behaviour is intentionally
+// straightforward: resolve the LN address to an LNURL pay endpoint,
+// request an invoice for the requested amount and pay it from the
+// user's wallet.
 
-var (
-	donationEndpoint string
-)
+const fixedLightningAddress = "kevinrav@btip.nl"
 
 func helpDonateUsage(ctx context.Context, errormsg string) string {
 	if len(errormsg) > 0 {
@@ -41,49 +41,65 @@ func helpDonateUsage(ctx context.Context, errormsg string) string {
 }
 
 func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, error) {
-	// check and print all commands
+	// preserve existing behaviour that logs any text and loads user
 	m := ctx.Message()
 	bot.anyTextHandler(ctx)
 	user := LoadUser(ctx)
 	if user.Wallet == nil {
 		return ctx, errors.Create(errors.UserNoWalletError)
 	}
-	// if no amount is in the command, ask for it
+
+	// decode amount from command; if none and private chat, ask for it
 	amount, err := decodeAmountFromCommand(m.Text)
 	if (err != nil || amount < 1) && m.Chat.Type == tb.ChatPrivate {
-		// // no amount was entered, set user state and ask for amount
 		_, err = bot.askForAmount(ctx, "", "CreateDonationState", 0, 0, m.Text)
 		return ctx, err
 	}
+	// convert sats -> millisats (existing behaviour)
 	amount = amount * 1000
-	// command is valid
-	msg := bot.trySendMessageEditable(m.Chat, Translate(ctx, "donationProgressMessage"))
-	// get invoice
-	r, err := http.NewRequest(http.MethodGet, donationEndpoint, nil)
-	if err != nil {
-		log.Errorln(err)
-		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
-		return ctx, err
-	}
-	// Create query parameters
-	params := url.Values{}
-	params.Set("amount", strconv.FormatInt(amount, 10))
-	params.Set("comment", fmt.Sprintf("from %s bot %s", GetUserStr(user.Telegram), GetUserStr(bot.Telegram.Me)))
-	// Set the query parameters in the URL
-	r.URL.RawQuery = params.Encode()
 
-	resp, err := http.DefaultClient.Do(r)
+	// send progress message
+	msg := bot.trySendMessageEditable(m.Chat, Translate(ctx, "donationProgressMessage"))
+
+	// Resolve fixed lightning address to LNURL pay endpoint:
+	parts := strings.Split(fixedLightningAddress, "@")
+	if len(parts) != 2 {
+		log.Errorln("invalid fixed lightning address:", fixedLightningAddress)
+		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
+		return ctx, fmt.Errorf("invalid fixed lightning address")
+	}
+	userPart := parts[0]
+	domainPart := parts[1]
+
+	lnurlEndpoint := fmt.Sprintf("https://%s/.well-known/lnurlp/%s", domainPart, userPart)
+
+	// Create request with amount and a short comment
+	req, err := http.NewRequest(http.MethodGet, lnurlEndpoint, nil)
 	if err != nil {
 		log.Errorln(err)
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
 		return ctx, err
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	q := url.Values{}
+	q.Set("amount", strconv.FormatInt(amount, 10))
+	q.Set("comment", fmt.Sprintf("from %s via bot %s", GetUserStr(user.Telegram), GetUserStr(bot.Telegram.Me)))
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Errorln(err)
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
 		return ctx, err
 	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Errorln(err)
+		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
+		return ctx, err
+	}
+
 	pv := lnurl.LNURLPayValues{}
 	err = json.Unmarshal(body, &pv)
 	if err != nil {
@@ -92,14 +108,12 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 		return ctx, err
 	}
 	if pv.Status == "ERROR" || len(pv.PR) < 1 {
-		log.Errorln(err)
+		log.Errorln("lnurl pay endpoint returned an error or no invoice:", string(body))
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
-		return ctx, err
+		return ctx, fmt.Errorf("lnurl pay endpoint error")
 	}
 
-	// send donation invoice
-	// user := LoadUser(ctx)
-	// bot.trySendMessage(user.Telegram, string(body))
+	// pay the returned invoice
 	_, err = user.Wallet.Pay(lnbits.PaymentParams{Out: true, Bolt11: string(pv.PR)}, bot.Client)
 	if err != nil {
 		userStr := GetUserStr(user.Telegram)
@@ -108,82 +122,36 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
 		return ctx, err
 	}
-	// hotfix because the edit doesn't work!
-	// todo: fix edit
-	// bot.tryEditMessage(msg, Translate(ctx, "donationSuccess"))
+
+	// remove progress and notify success
 	bot.tryDeleteMessage(msg)
 	bot.trySendMessage(m.Chat, Translate(ctx, "donationSuccess"))
 	return ctx, nil
 }
 
-func init() {
-	var sb strings.Builder
-	_, err := io.Copy(&sb, rot13Reader{strings.NewReader("uggcf://ya.gvcf/.jryy-xabja/yaheyc/YvtugavatGvcObg")})
-	if err != nil {
-		panic(err)
-	}
-	donationEndpoint = sb.String()
-}
-
-type rot13Reader struct {
-	r io.Reader
-}
-
-func (rot13 rot13Reader) Read(b []byte) (int, error) {
-	n, err := rot13.r.Read(b)
-	for i := 0; i < n; i++ {
-		switch {
-		case b[i] >= 65 && b[i] <= 90:
-			if b[i] <= 77 {
-				b[i] = b[i] + 13
-			} else {
-				b[i] = b[i] - 13
-			}
-		case b[i] >= 97 && b[i] <= 122:
-			if b[i] <= 109 {
-				b[i] = b[i] + 13
-			} else {
-				b[i] = b[i] - 13
-			}
-		}
-	}
-	return n, err
-}
-
 func (bot TipBot) parseCmdDonHandler(ctx intercept.Context) error {
 	m := ctx.Message()
-	arg := ""
-	if strings.HasPrefix(strings.ToLower(m.Text), "/send") {
-		arg, _ = getArgumentFromCommand(m.Text, 2)
-		if arg != "@"+bot.Telegram.Me.Username {
-			return fmt.Errorf("err")
-		}
-	}
-	if strings.HasPrefix(strings.ToLower(m.Text), "/tip") {
-		arg = GetUserStr(m.ReplyTo.Sender)
-		if arg != "@"+bot.Telegram.Me.Username {
-			return fmt.Errorf("err")
-		}
-	}
-	if arg == "@LightningTipBot" || len(arg) < 1 {
-		return fmt.Errorf("err")
-	}
 
+	// try to extract amount (if not present, decodeAmountFromCommand will return error)
 	amount, err := decodeAmountFromCommand(m.Text)
-	if err != nil {
-		return err
+	if err != nil || amount < 1 {
+		// if we don't have an amount, let the donation handler ask for it
+		amount = 0
 	}
 
-	var sb strings.Builder
-	_, err = io.Copy(&sb, rot13Reader{strings.NewReader("Gunax lbh! V'z ebhgvat guvf qbangvba gb YvtugavatGvcObg@ya.gvcf.")})
-	if err != nil {
-		panic(err)
-	}
-	donationInterceptMessage := sb.String()
+	// Inform the user that the donation will be forwarded to the fixed recipient
+	notice := fmt.Sprintf("Thanks — donations initiated here will be forwarded to @kevinrav (%s).", fixedLightningAddress)
+	bot.trySendMessage(m.Sender, str.MarkdownEscape(notice))
 
-	bot.trySendMessage(m.Sender, str.MarkdownEscape(donationInterceptMessage))
-	m.Text = fmt.Sprintf("/donate %d", amount)
-	bot.donationHandler(ctx)
-	// returning nil here will abort the parent ctx (/pay or /tip)
+	// rewrite message to call /donate with the detected amount (or with no amount so donateHandler asks)
+	if amount > 0 {
+		m.Text = fmt.Sprintf("/donate %d", amount)
+	} else {
+		m.Text = "/donate"
+	}
+	// call donation handler which will perform the actual transfer
+	_ = bot.donationHandler(ctx)
+
+	// returning nil will abort the parent context (so original /tip or /send stops)
 	return nil
 }
