@@ -259,10 +259,13 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	})
 
 	bot.Telegram.Send(tipperTgUser, tipperMsg)
-	// Design choice: Send to tippee in private chat or reply to message in group?
-	// Current: Private message to tippee.
-	// Alternative: Reply to original message in group: bot.Telegram.Reply(originalMessage, tippeeMsg)
-	bot.Telegram.Send(tippeeTgUser, tippeeMsg) 
+	
+	// If in a group chat, reply to the original message. Otherwise, send a private message.
+	if originalMessage.Chat.Type != tb.ChatPrivate {
+		bot.Telegram.Reply(originalMessage, tippeeMsg)
+	} else {
+		bot.Telegram.Send(tippeeTgUser, tippeeMsg) 
+	}
 
 	log.Infof("Reacji tip: %s tipped %d sats to %s with %s", GetUserStr(tipperTgUser), tipAmount, GetUserStr(tippeeTgUser), reactionEmoji)
 	return nil

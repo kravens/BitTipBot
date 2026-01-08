@@ -431,5 +431,5 @@ reacji_tip_failed_invoice_creation = """Failed to create an invoice for the reac
 reacji_tip_failed_payment = """Failed to process the reacji tip payment."""
 reacji_self_tip_error = """You cannot tip yourself with a reacji."""
 reacji_tipper_no_wallet = """You need a wallet to send reacji tips. Use /start to create one."""
-reacji_tippee_no_wallet = """The recipient needs a wallet to receive reacji tips."""
+reacji_tippee_no_wallet = """The recipient {{.Tippee}} needs a wallet to receive reacji tips."""
 reacji_not_configured = """You haven't configured a tip amount for {{.Emoji}}. Use /setreacji to set one."""
