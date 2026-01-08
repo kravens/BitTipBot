@@ -145,6 +145,7 @@ startWalletCreatedMessage = """🧮 Wallet created."""
 startWalletReadyMessage   = """✅ *Your wallet is ready.*"""
 startWalletErrorMessage   = """🚫 Error initializing your wallet. Try again later."""
 startNoUsernameMessage    = """☝️ It looks like you don't have a Telegram @username yet. That's ok, you don't need one to use this bot. However, to make better use of your wallet, set up a username in the Telegram settings. Then, enter /balance so the bot can update its record of you."""
+start_wallet_create = """You need a wallet to use this feature. Use /start to create one."""
 
 # BALANCE
 
@@ -410,3 +411,25 @@ For users (in private chat): `/join <group_name>`\nExample: `/join TheBestBitcoi
 generateDalleHelpMessage        = """Generate images using OpenAI DALLE 2.\nUsage: `/generate <prompt>`\nPrice: 1000 sat"""
 generateDallePayInvoiceMessage  = """Pay this invoice to generate four images 👇"""
 generateDalleGeneratingMessage  = """Your images are being generated. Please wait..."""
+
+# REAJI TIPPING
+reacji_set_syntax = """Syntax: `/setreacji <emoji> <amount_in_sats>`"""
+reacji_set_invalid_amount = """Invalid amount. Please enter a positive number."""
+reacji_set_success = """Reacji tip for {{.Emoji}} set to {{.Amount}} sats."""
+reacji_set_save_error = """Failed to save your reacji settings. Please try again later."""
+reacji_my_header = """Your current reacji tip configurations:"""
+reacji_my_none_configured = """You have no reacji tips configured yet. Use /setreacji to add one."""
+reacji_del_syntax = """Syntax: `/delreacji <emoji>`"""
+reacji_del_not_found = """No reacji tip found for {{.Emoji}}."""
+reacji_del_success = """Reacji tip for {{.Emoji}} deleted."""
+reacji_del_save_error = """Failed to delete your reacji settings. Please try again later."""
+reacji_tip_success_tipper = """You tipped {{.Amount}} sats to {{.Tippee}} with {{.Emoji}}!"""
+reacji_tip_success_tippee = """You received {{.Amount}} sats from {{.Tipper}} with {{.Emoji}}!"""
+reacji_tip_failed_balance_check = """Failed to check your balance for the reacji tip."""
+reacji_tip_failed_insufficient_balance = """You don't have enough balance ({{.Balance}} sats) to tip {{.Amount}} sats with this reacji."""
+reacji_tip_failed_invoice_creation = """Failed to create an invoice for the reacji tip recipient."""
+reacji_tip_failed_payment = """Failed to process the reacji tip payment."""
+reacji_self_tip_error = """You cannot tip yourself with a reacji."""
+reacji_tipper_no_wallet = """You need a wallet to send reacji tips. Use /start to create one."""
+reacji_tippee_no_wallet = """The recipient needs a wallet to receive reacji tips."""
+reacji_not_configured = """You haven't configured a tip amount for {{.Emoji}}. Use /setreacji to set one."""

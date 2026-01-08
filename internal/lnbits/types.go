@@ -38,11 +38,20 @@ type User struct {
 	Settings     *Settings    `json:"settings" gorm:"foreignKey:id"`
 }
 
+// ReacjiSettings defines the emoji and its associated tip amount
+type ReacjiSettings struct {
+	SettingsID string `json:"settings_id" gorm:"primaryKey"` // Foreign key to Settings.ID
+	Emoji      string `json:"emoji" gorm:"primaryKey"`       // e.g., "❤️", "👍"
+	Amount     int64  `json:"amount"`                        // Amount in satoshis
+}
+
 type Settings struct {
 	ID      string          `json:"id" gorm:"primarykey"`
 	Display DisplaySettings `gorm:"embedded;embeddedPrefix:display_"`
 	Node    NodeSettings    `gorm:"embedded;embeddedPrefix:node_"`
 	Nostr   NostrSettings   `gorm:"embedded;embeddedPrefix:nostr_"`
+	// Add a slice of ReacjiSettings to the user's settings
+	ReacjiTips []ReacjiSettings `json:"reacji_tips" gorm:"foreignKey:SettingsID"`
 }
 
 type DisplaySettings struct {

@@ -31,10 +31,18 @@ func RegisterLanguages() *i18n.Bundle {
 	bundle.LoadMessageFile("translations/ru.toml")
 	return bundle
 }
-func Translate(languageCode string, MessgeID string) string {
-	str, err := i18n.NewLocalizer(Bundle, languageCode).Localize(&i18n.LocalizeConfig{MessageID: MessgeID})
+func Translate(languageCode string, MessgeID string, args ...map[string]interface{}) string {
+	var localizeConfig i18n.LocalizeConfig
+	localizeConfig.MessageID = MessgeID
+	if len(args) > 0 {
+		localizeConfig.TemplateData = args[0]
+	}
+
+	str, err := i18n.NewLocalizer(Bundle, languageCode).Localize(&localizeConfig)
 	if err != nil {
 		log.Warnf("Error translating message %s: %s", MessgeID, err)
+		// Fallback to MessageID if translation fails
+		return MessgeID
 	}
 	return str
 }

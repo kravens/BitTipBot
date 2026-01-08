@@ -142,3 +142,16 @@ func (bot *TipBot) UserIsBanned(user *lnbits.User) bool {
 	}
 	return false
 }
+
+// UpdateUserSetting updates a user's settings in the database.
+// This function assumes the lnbits.User object's Settings field has already been modified.
+func UpdateUserSetting(user *lnbits.User, bot TipBot) error {
+	user.UpdatedAt = time.Now()
+	// Ensure that the Settings are also saved/updated
+	if user.Settings != nil {
+		// GORM will handle saving/updating the nested ReacjiTips slice
+		// if the foreign key relationship is correctly defined and AutoMigrate is run.
+		return bot.DB.Save(user).Error
+	}
+	return bot.DB.Save(user).Error
+}
