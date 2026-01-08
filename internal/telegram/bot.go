@@ -148,50 +148,42 @@ func (bot *TipBot) Start() {
 	bot.GracefulShutdown()
 }
 
-// registerTelegramHandlers registers all telegram handlers
-func (bot *TipBot) registerTelegramHandlers() {
-	telegramHandlerRegistration.Do(func() {
-		// Register reacji tipping handlers
-		bot.Telegram.Handle(tb.OnReaction, bot.OnReactionHandler)
-		bot.Telegram.Handle("/setreacji", bot.handleSetReacji)
-		bot.Telegram.Handle("/myreacjis", bot.handleMyReacjis)
-		bot.Telegram.Handle("/delreacji", bot.handleDelReacji)
-
-		// ... (other existing handlers would go here) ...
-	})
-}
-
 // OnReactionHandler processes reactions to messages for reacji tipping
 func (bot *TipBot) OnReactionHandler(c tb.Context) error {
+	// Check if this is actually a MessageReaction update
+	if c.Update().MessageReaction == nil {
+		return nil // Not a reaction update, ignore
+	}
+
 	// Ignore reactions from the bot itself
-	if c.Reaction().User.ID == bot.Telegram.Me.ID {
+	if c.Update().MessageReaction.User.ID == bot.Telegram.Me.ID {
 		return nil
 	}
 
-	tipperTgUser := c.Reaction().User
-	originalMessage := c.Reaction().Message
+	tipperTgUser := c.Update().MessageReaction.User
+	originalMessage := c.Update().MessageReaction.Message
 	tippeeTgUser := originalMessage.Sender
-	reactionEmoji := c.Reaction().Emoji
+	reactionEmoji := c.Update().MessageReaction.Emoji
 
 	// Prevent self-tipping
 	if tipperTgUser.ID == tippeeTgUser.ID {
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_self_tip_error"))
-		return nil
+		_, err := bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_self_tip_error"))
+		return err
 	}
 
 	// Get LNbits users
 	lnbitsTipper, err := GetUser(tipperTgUser, *bot)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not get tipper user %s: %v", GetUserStr(tipperTgUser), err)
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tipper_no_wallet"))
-		return nil
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tipper_no_wallet"))
+		return err
 	}
 	lnbitsTippee, err := GetUser(tippeeTgUser, *bot)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not get tippee user %s: %v", GetUserStr(tippeeTgUser), err)
 		// More specific message if tippee doesn't have a wallet
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tippee_no_wallet", map[string]interface{}{"Tippee": GetUserStrMd(tippeeTgUser)}))
-		return nil
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tippee_no_wallet", map[string]interface{}{"Tippee": GetUserStrMd(tippeeTgUser)}))
+		return err
 	}
 
 	// Get configured tip amount from tipper's settings
@@ -199,19 +191,19 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	if !found {
 		// No tip configured for this emoji, do nothing or send a message
 		log.Debugf("OnReactionHandler: No reacji tip configured for %s by %s", reactionEmoji, GetUserStr(tipperTgUser))
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_not_configured", map[string]interface{}{"Emoji": reactionEmoji}))
-		return nil
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_not_configured", map[string]interface{}{"Emoji": reactionEmoji}))
+		return err
 	}
 
 	// Check tipper's balance
 	tipperBalance, err := bot.GetUserBalance(lnbitsTipper)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not get tipper balance for %s: %v", GetUserStr(tipperTgUser), err)
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_balance_check"))
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_balance_check"))
 		return err
 	}
 	if tipperBalance < tipAmount {
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_insufficient_balance", map[string]interface{}{"Amount": tipAmount, "Balance": tipperBalance}))
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_insufficient_balance", map[string]interface{}{"Amount": tipAmount, "Balance": tipperBalance}))
 		return fmt.Errorf("insufficient balance for reacji tip")
 	}
 
@@ -225,7 +217,7 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	invoice, err := tippeeWallet.Invoice(invoiceParams, bot.Client)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not create invoice for tippee %s: %v", GetUserStr(tippeeTgUser), err)
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_invoice_creation"))
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_invoice_creation"))
 		return err
 	}
 
@@ -238,7 +230,7 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	_, err = tipperWallet.Pay(paymentParams, bot.Client)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not pay invoice from tipper %s: %v", GetUserStr(tipperTgUser), err)
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_payment"))
+		_, err = bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tip_failed_payment"))
 		return err
 	}
 
@@ -258,13 +250,22 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 		"Tipper": GetUserStrMd(tipperTgUser),
 	})
 
-	bot.Telegram.Send(tipperTgUser, tipperMsg)
+	_, err = bot.Telegram.Send(tipperTgUser, tipperMsg)
+	if err != nil {
+		log.Errorf("OnReactionHandler: Failed to send tipper message: %v", err)
+	}
 	
 	// If in a group chat, reply to the original message. Otherwise, send a private message.
 	if originalMessage.Chat.Type != tb.ChatPrivate {
-		bot.Telegram.Reply(originalMessage, tippeeMsg)
+		_, err = bot.Telegram.Reply(originalMessage, tippeeMsg)
+		if err != nil {
+			log.Errorf("OnReactionHandler: Failed to reply to original message in group: %v", err)
+		}
 	} else {
-		bot.Telegram.Send(tippeeTgUser, tippeeMsg) 
+		_, err = bot.Telegram.Send(tippeeTgUser, tippeeMsg) 
+		if err != nil {
+			log.Errorf("OnReactionHandler: Failed to send tippee private message: %v", err)
+		}
 	}
 
 	log.Infof("Reacji tip: %s tipped %d sats to %s with %s", GetUserStr(tipperTgUser), tipAmount, GetUserStr(tippeeTgUser), reactionEmoji)
@@ -276,32 +277,37 @@ func (bot *TipBot) handleSetReacji(c tb.Context) error {
 	user := c.Sender()
 	lnbitsUser, err := GetUser(user, *bot)
 	if err != nil {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		return err
 	}
 
 	args := strings.Split(c.Message().Text, " ")
 	if len(args) != 3 {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_syntax"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_syntax"))
+		return err
 	}
 
 	emoji := args[1]
 	amountStr := args[2]
 	amount, err := strconv.ParseInt(amountStr, 10, 64)
 	if err != nil || amount <= 0 {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_invalid_amount"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_invalid_amount"))
+		return err
 	}
 
 	bot.updateReacjiSettings(lnbitsUser, emoji, amount)
 	err = UpdateUserRecord(lnbitsUser, *bot) // Persist the updated settings using UpdateUserRecord
 	if err != nil {
 		log.Errorf("handleSetReacji: Failed to update user settings for %s: %v", GetUserStr(user), err)
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_save_error"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_save_error"))
+		return err
 	}
 
-	return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_success", map[string]interface{}{
+	_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_success", map[string]interface{}{
 		"Emoji":  emoji,
 		"Amount": amount,
 	}))
+	return err
 }
 
 // handleMyReacjis displays the user's current reacji tip configurations
@@ -309,11 +315,13 @@ func (bot *TipBot) handleMyReacjis(c tb.Context) error {
 	user := c.Sender()
 	lnbitsUser, err := GetUser(user, *bot)
 	if err != nil {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		return err
 	}
 
 	if lnbitsUser.Settings == nil || len(lnbitsUser.Settings.ReacjiTips) == 0 {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_my_none_configured"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_my_none_configured"))
+		return err
 	}
 
 	var sb strings.Builder
@@ -322,7 +330,8 @@ func (bot *TipBot) handleMyReacjis(c tb.Context) error {
 		sb.WriteString(fmt.Sprintf("%s: %d sats\n", rs.Emoji, rs.Amount))
 	}
 
-	return bot.Telegram.Send(user, sb.String())
+	_, err = bot.Telegram.Send(user, sb.String())
+	return err
 }
 
 // handleDelReacji removes a reacji tip configuration
@@ -330,27 +339,32 @@ func (bot *TipBot) handleDelReacji(c tb.Context) error {
 	user := c.Sender()
 	lnbitsUser, err := GetUser(user, *bot)
 	if err != nil {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "start_wallet_create"))
+		return err
 	}
 
 	args := strings.Split(c.Message().Text, " ")
 	if len(args) != 2 {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_syntax"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_syntax"))
+		return err
 	}
 
 	emoji := args[1]
 
 	if !bot.deleteReacjiSettings(lnbitsUser, emoji) {
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_not_found", map[string]interface{}{"Emoji": emoji}))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_not_found", map[string]interface{}{"Emoji": emoji}))
+		return err
 	}
 
 	err = UpdateUserRecord(lnbitsUser, *bot) // Persist the updated settings using UpdateUserRecord
 	if err != nil {
 		log.Errorf("handleDelReacji: Failed to update user settings for %s: %v", GetUserStr(user), err)
-		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_save_error"))
+		_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_save_error"))
+		return err
 	}
 
-	return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_success", map[string]interface{}{"Emoji": emoji}))
+	_, err = bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_success", map[string]interface{}{"Emoji": emoji}))
+	return err
 }
 
 // getReacjiTipAmount retrieves the configured tip amount for a given emoji

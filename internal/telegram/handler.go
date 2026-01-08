@@ -107,7 +107,7 @@ func (bot TipBot) getHandler() []InterceptionWrapper {
 		// 			bot.requirePrivateChatInterceptor,
 		// 			bot.localizerInterceptor,
 		// 			bot.logMessageInterceptor,
-		// 			bot.loadUserInterceptor,
+		// 			bot.requireUserInterceptor,
 		// 			bot.lockInterceptor,
 		// 		},
 		// 		OnDefer: []intercept.Func{
@@ -655,6 +655,21 @@ func (bot TipBot) getHandler() []InterceptionWrapper {
 		{
 			Endpoints: []interface{}{tb.OnInlineResult},
 			Handler:   bot.anyChosenInlineHandler,
+		},
+		{
+			Endpoints: []interface{}{tb.OnUpdate}, // Handle all updates, then filter for reactions
+			Handler:   bot.OnReactionHandler,
+			Interceptor: &Interceptor{
+				Before: []intercept.Func{
+					bot.localizerInterceptor,
+					bot.logMessageInterceptor,
+					bot.loadUserInterceptor, // Load user for tipper
+					bot.lockInterceptor,
+				},
+				OnDefer: []intercept.Func{
+					bot.unlockInterceptor,
+				},
+			},
 		},
 		{
 			Endpoints: []interface{}{&btnPay},
