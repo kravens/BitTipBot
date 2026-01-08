@@ -189,7 +189,8 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	lnbitsTippee, err := GetUser(tippeeTgUser, *bot)
 	if err != nil {
 		log.Errorf("OnReactionHandler: Could not get tippee user %s: %v", GetUserStr(tippeeTgUser), err)
-		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tippee_no_wallet"))
+		// More specific message if tippee doesn't have a wallet
+		bot.Telegram.Send(tipperTgUser, i18n.Translate(tipperTgUser.LanguageCode, "reacji_tippee_no_wallet", map[string]interface{}{"Tippee": GetUserStrMd(tippeeTgUser)}))
 		return nil
 	}
 
@@ -258,7 +259,9 @@ func (bot *TipBot) OnReactionHandler(c tb.Context) error {
 	})
 
 	bot.Telegram.Send(tipperTgUser, tipperMsg)
-	// Consider replying to the original message in the group for the tippee, or sending a private message
+	// Design choice: Send to tippee in private chat or reply to message in group?
+	// Current: Private message to tippee.
+	// Alternative: Reply to original message in group: bot.Telegram.Reply(originalMessage, tippeeMsg)
 	bot.Telegram.Send(tippeeTgUser, tippeeMsg) 
 
 	log.Infof("Reacji tip: %s tipped %d sats to %s with %s", GetUserStr(tipperTgUser), tipAmount, GetUserStr(tippeeTgUser), reactionEmoji)
@@ -286,7 +289,7 @@ func (bot *TipBot) handleSetReacji(c tb.Context) error {
 	}
 
 	bot.updateReacjiSettings(lnbitsUser, emoji, amount)
-	err = UpdateUserSetting(lnbitsUser, *bot) // Persist the updated settings
+	err = UpdateUserRecord(lnbitsUser, *bot) // Persist the updated settings using UpdateUserRecord
 	if err != nil {
 		log.Errorf("handleSetReacji: Failed to update user settings for %s: %v", GetUserStr(user), err)
 		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_set_save_error"))
@@ -338,7 +341,7 @@ func (bot *TipBot) handleDelReacji(c tb.Context) error {
 		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_not_found", map[string]interface{}{"Emoji": emoji}))
 	}
 
-	err = UpdateUserSetting(lnbitsUser, *bot) // Persist the updated settings
+	err = UpdateUserRecord(lnbitsUser, *bot) // Persist the updated settings using UpdateUserRecord
 	if err != nil {
 		log.Errorf("handleDelReacji: Failed to update user settings for %s: %v", GetUserStr(user), err)
 		return bot.Telegram.Send(user, i18n.Translate(user.LanguageCode, "reacji_del_save_error"))

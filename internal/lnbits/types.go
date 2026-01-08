@@ -40,9 +40,9 @@ type User struct {
 
 // ReacjiSettings defines the emoji and its associated tip amount
 type ReacjiSettings struct {
-	SettingsID string `json:"settings_id" gorm:"primaryKey"` // Foreign key to Settings.ID
-	Emoji      string `json:"emoji" gorm:"primaryKey"`       // e.g., "❤️", "👍"
-	Amount     int64  `json:"amount"`                        // Amount in satoshis
+	SettingsID string `json:"settings_id" gorm:"primaryKey;autoIncrement:false"` // Foreign key to Settings.ID, part of composite primary key
+	Emoji      string `json:"emoji" gorm:"primaryKey;autoIncrement:false"`       // e.g., "❤️", "👍", part of composite primary key
+	Amount     int64  `json:"amount"`                                            // Amount in satoshis
 }
 
 type Settings struct {
@@ -51,7 +51,7 @@ type Settings struct {
 	Node    NodeSettings    `gorm:"embedded;embeddedPrefix:node_"`
 	Nostr   NostrSettings   `gorm:"embedded;embeddedPrefix:nostr_"`
 	// Add a slice of ReacjiSettings to the user's settings
-	ReacjiTips []ReacjiSettings `json:"reacji_tips" gorm:"foreignKey:SettingsID"`
+	ReacjiTips []ReacjiSettings `json:"reacji_tips" gorm:"foreignKey:SettingsID;references:ID"` // Explicitly define references
 }
 
 type DisplaySettings struct {
