@@ -68,6 +68,15 @@ func (bot TipBot) tryReplyMessage(to *tb.Message, what interface{}, options ...i
 	return
 }
 
+// editOrSend edits statusMsg and, if the edit fails (Telegram 400 "message
+// can't be edited" was observed swallowing payment-failure notices), sends
+// what as a fresh message instead. Error feedback must never silently vanish.
+func (bot *TipBot) editOrSend(statusMsg tb.Editable, to tb.Recipient, what interface{}) {
+	if _, err := bot.tryEditMessage(statusMsg, what); err != nil {
+		bot.trySendMessage(to, what)
+	}
+}
+
 func (bot TipBot) tryEditMessage(to tb.Editable, what interface{}, options ...interface{}) (msg *tb.Message, err error) {
 	// get a sig for the rate limiter
 	sig, chat := to.MessageSig()
