@@ -144,6 +144,19 @@ func newToolTip(m *tb.Message, bot *TipBot, amount int64, initializedWallet bool
 		tipmsg = tipmsg + fmt.Sprintf("\n%s", fmt.Sprintf(tooltipChatWithBotMessage, GetUserStrMd(bot.Telegram.Me)))
 	}
 	msg := bot.tryReplyMessage(m.ReplyTo, tipmsg, tb.Silent)
+	if msg == nil {
+		// reply failed (tipped message deleted, bot not allowed to post, ...).
+		// The tip is already paid, so skip the tooltip instead of panicking.
+		log.Warnf("[newToolTip] could not post tooltip for message %d in chat %d", m.ReplyTo.ID, m.Chat.ID)
+		return
+	}
+	// Telegram can leave reply_to_message out of the response; NewTipTooltip needs it for the ID.
+	if msg.ReplyTo == nil {
+		msg.ReplyTo = m.ReplyTo
+	}
+	if msg.Chat == nil {
+		msg.Chat = m.Chat
+	}
 	message := NewTipTooltip(msg, TipAmount(amount), Tips(1))
 	message.Tippers = appendUinqueUsersToSlice(message.Tippers, m.Sender)
 	runtime.IgnoreError(bot.Bunt.Set(message))
