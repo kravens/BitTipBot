@@ -58,6 +58,31 @@ func (bot TipBot) idInterceptor(ctx intercept.Context) (intercept.Context, error
 	return ctx, nil
 }
 
+// isPlaceholderSender reports whether u is one of the fake users Telegram puts
+// into `from` for messages sent on behalf of a chat: channel posts forwarded
+// to a discussion group (777000), messages sent as a channel (@Channel_Bot,
+// 136817688) and anonymous group admins (@GroupAnonymousBot, 1087968824).
+// Everyone who posts that way shares the same user, so it must never own or
+// receive money.
+func isPlaceholderSender(u *tb.User) bool {
+	if u == nil {
+		return false
+	}
+	switch u.ID {
+	case 777000, 136817688, 1087968824:
+		return true
+	}
+	return false
+}
+
+// rejectPlaceholderSenderInterceptor stops updates sent on behalf of a chat.
+func (bot TipBot) rejectPlaceholderSenderInterceptor(ctx intercept.Context) (intercept.Context, error) {
+	if isPlaceholderSender(ctx.Sender()) {
+		return ctx, fmt.Errorf("[rejectPlaceholderSenderInterceptor] placeholder sender %d", ctx.Sender().ID)
+	}
+	return ctx, nil
+}
+
 // answerCallbackInterceptor will answer the callback with the given text in the context
 func (bot TipBot) answerCallbackInterceptor(ctx intercept.Context) (intercept.Context, error) {
 	c := ctx.Callback()
@@ -140,6 +165,9 @@ func (bot TipBot) tryLoadUserInterceptor(ctx intercept.Context) (intercept.Conte
 func (bot TipBot) loadReplyToInterceptor(ctx intercept.Context) (intercept.Context, error) {
 	if ctx.Message() != nil {
 		if ctx.Message().ReplyTo != nil {
+			if isPlaceholderSender(ctx.Message().ReplyTo.Sender) {
+				return ctx, fmt.Errorf("[loadReplyToInterceptor] reply to placeholder sender %d", ctx.Message().ReplyTo.Sender.ID)
+			}
 			if ctx.Message().ReplyTo.Sender != nil {
 				user, _ := GetUser(ctx.Message().ReplyTo.Sender, bot)
 				user.Telegram = ctx.Message().ReplyTo.Sender

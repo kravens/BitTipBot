@@ -28,7 +28,7 @@ func (bot TipBot) registerTelegramHandlers() {
 }
 
 func getDefaultBeforeInterceptor(bot TipBot) []intercept.Func {
-	return []intercept.Func{bot.idInterceptor}
+	return []intercept.Func{bot.idInterceptor, bot.rejectPlaceholderSenderInterceptor}
 }
 func getDefaultDeferInterceptor(bot TipBot) []intercept.Func {
 	return []intercept.Func{bot.unlockInterceptor}
