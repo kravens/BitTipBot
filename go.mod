@@ -6,10 +6,13 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/PuerkitoBio/goquery v1.8.0
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/eko/gocache v1.2.0
 	github.com/fiatjaf/go-lnurl v1.11.3-0.20220819192234-5c5819dd0aa7
 	github.com/fiatjaf/ln-decodepay v1.1.0
+	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/gorilla/mux v1.8.0
+	github.com/gorilla/websocket v1.4.2
 	github.com/imroc/req v0.3.0
 	github.com/jinzhu/configor v1.2.1
 	github.com/makiuchi-d/gozxing v0.0.2
@@ -59,13 +62,10 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/decred/dcrd/lru v1.0.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/go-redis/redis/v8 v8.8.2 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.2 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
@@ -81,7 +81,6 @@ require (
 	github.com/miekg/dns v1.1.43 // indirect
 	github.com/nbd-wtf/ln-decodepay v1.5.1 // indirect
 	github.com/pegasus-kv/thrift v0.13.0 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tidwall/btree v0.6.1 // indirect
 	github.com/tidwall/grect v0.1.3 // indirect
@@ -104,7 +103,6 @@ require (
 	gopkg.in/cenkalti/backoff.v1 v1.1.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
-	gopkg.in/tucnak/telebot.v2 v2.5.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/apimachinery v0.0.0-20191123233150-4c4803ed55e3 // indirect
 )
