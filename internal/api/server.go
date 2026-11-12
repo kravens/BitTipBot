@@ -41,6 +41,11 @@ func NewServer(address string) *Server {
 func (w *Server) ListenAndServe() {
 	go w.httpServer.ListenAndServe()
 }
+
+// Use adds a middleware that runs for every route of the server.
+func (w *Server) Use(middleware mux.MiddlewareFunc) {
+	w.router.Use(middleware)
+}
 func (w *Server) PathPrefix(path string, handler http.Handler) {
 	w.router.PathPrefix(path).Handler(handler)
 }

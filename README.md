@@ -54,6 +54,7 @@ You can either use your own LNbits instance (recommended) or create an account a
 - `transactions_path`: Transaction database file path.
 - `buntdb_path`: Object storage database file path.
 - `lnbits_webhook_server`: URL that lnbits can reach the bot with. This is used for creating webhooks from LNbits to receive notifications about payments (optional).
+- `admin_api_token`: Secret for the admin API on `admin_api_host` (ban, unban, mutex, pprof). Send it as `Authorization: Bearer <token>`. Without it the admin API rejects every request.
 - `message_dispose_duration`: Duration in seconds after which `/tip` are deleted from a channel (only if the bot is channel admin).
 - `http_proxy` uses a proxy for all LNURL-related outbound requests (optional).
 - `lnurl_public_host_name` is the public URL of your lnbits/LndHub (for BlueWallet/Zeus support, optional).

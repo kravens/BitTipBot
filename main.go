@@ -82,6 +82,10 @@ func startApiServer(bot *telegram.TipBot) {
 	// start internal admin server
 	adminService := admin.New(bot)
 	internalAdminServer := api.NewServer(internal.Configuration.Bot.AdminAPIHost)
+	if internal.Configuration.Bot.AdminAPIToken == "" {
+		log.Warnln("[ADMIN] bot.admin_api_token is not set, the admin API rejects all requests")
+	}
+	internalAdminServer.Use(api.AdminTokenMiddleware(internal.Configuration.Bot.AdminAPIToken))
 	internalAdminServer.AppendRoute("/mutex", mutex.ServeHTTP)
 	internalAdminServer.AppendRoute("/mutex/unlock/{id}", mutex.UnlockHTTP)
 	internalAdminServer.AppendRoute("/admin/ban/{id}", adminService.BanUser)
