@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -137,5 +140,24 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 	if got.Token[0].Mint != orig.Token[0].Mint || len(got.Token[0].Proofs) != 2 {
 		t.Fatalf("round trip mismatch: %+v", got)
+	}
+}
+
+// MintQuote must reject an invoice whose amount differs from the requested
+// one: callers pay it from the user's wallet without looking at it again.
+func TestMintQuoteChecksInvoiceAmount(t *testing.T) {
+	// BOLT #11 example invoice for 2500 micro-bitcoin = 250,000 sat
+	const invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+	mint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"quote":"q1","request":"%s","state":"UNPAID"}`, invoice)
+	}))
+	defer mint.Close()
+	c := NewClient(mint.URL)
+
+	if _, err := c.MintQuote(21, "sat"); err == nil {
+		t.Error("quote for 21 sat with a 250,000 sat invoice was accepted")
+	}
+	if quote, err := c.MintQuote(250000, "sat"); err != nil || quote.Request != invoice {
+		t.Errorf("quote with the matching amount was rejected: %v", err)
 	}
 }
