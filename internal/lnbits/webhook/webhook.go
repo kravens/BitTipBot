@@ -19,6 +19,7 @@ import (
 	"github.com/LightningTipBot/LightningTipBot/internal/storage"
 
 	"github.com/gorilla/mux"
+	"github.com/tidwall/buntdb"
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/i18n"
@@ -79,6 +80,31 @@ func (w *Server) GetUserByWalletId(walletId string) (*lnbits.User, error) {
 	return user, nil
 }
 
+// settledAmount returns the amount in msat that LNbits says the user's wallet
+// received for paymentHash. It fails unless that payment is settled.
+func (w *Server) settledAmount(user *lnbits.User, paymentHash string) (int64, error) {
+	payment, err := w.c.Payment(user.Wallet, paymentHash)
+	if err != nil {
+		return 0, err
+	}
+	// LNbits only returns the details to the wallet that owns the payment. An
+	// outgoing payment of the same wallet has a negative amount.
+	if !payment.Paid || payment.Details.WalletID != user.Wallet.ID || payment.Details.Amount <= 0 {
+		return 0, fmt.Errorf("not a settled incoming payment of wallet %s", user.Wallet.ID)
+	}
+	return payment.Details.Amount, nil
+}
+
+// markHandled records paymentHash and reports whether this is the first time.
+func (w *Server) markHandled(paymentHash string) (first bool, err error) {
+	err = w.buntdb.Update(func(tx *buntdb.Tx) error {
+		_, replaced, err := tx.Set("webhook:"+paymentHash, "1", nil)
+		first = !replaced
+		return err
+	})
+	return first, err
+}
+
 func (w *Server) newRouter() *mux.Router {
 	router := mux.NewRouter()
 	router.HandleFunc("/", w.receive).Methods(http.MethodPost)
@@ -89,7 +115,7 @@ func (w *Server) receive(writer http.ResponseWriter, request *http.Request) {
 	log.Infoln("[Webhook] Received request")
 
 	// Read the raw body so we can log it for debugging and still decode it
-	rawBody, err := io.ReadAll(request.Body)
+	rawBody, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, 1<<20))
 	if err != nil {
 		log.Errorf("[Webhook] Error reading request body: %s", err.Error())
 		writer.WriteHeader(400)
@@ -136,8 +162,29 @@ func (w *Server) receive(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	// Anyone who can reach this port can send a webhook, so the body is only
+	// a hint. Ask LNbits whether this wallet really received the payment.
+	amountMsat, err := w.settledAmount(user, webhookEvent.PaymentHash)
+	if err != nil {
+		log.Errorf("[Webhook] Rejecting webhook for payment_hash %s: %s", webhookEvent.PaymentHash, err.Error())
+		writer.WriteHeader(400)
+		return
+	}
+	// Handle every payment once, so a webhook can't be replayed.
+	first, err := w.markHandled(webhookEvent.PaymentHash)
+	if err != nil {
+		log.Errorf("[Webhook] Error storing payment_hash %s: %s", webhookEvent.PaymentHash, err.Error())
+		writer.WriteHeader(500)
+		return
+	}
+	if !first {
+		log.Infof("[Webhook] Ignoring repeated webhook for payment_hash %s", webhookEvent.PaymentHash)
+		writer.WriteHeader(200)
+		return
+	}
+
 	log.Infoln(fmt.Sprintf("[⚡️ WebHook] User %s (%d) received invoice of %d sat.",
-		telegram.GetUserStr(user.Telegram), user.Telegram.ID, webhookEvent.Amount/1000))
+		telegram.GetUserStr(user.Telegram), user.Telegram.ID, amountMsat/1000))
 
 	// Always respond 200 immediately so LNbits doesn't retry
 	writer.WriteHeader(200)
@@ -167,7 +214,7 @@ func (w *Server) receive(writer http.ResponseWriter, request *http.Request) {
 	_, sendErr := w.bot.Send(
 		user.Telegram,
 		fmt.Sprintf(i18n.Translate(user.Telegram.LanguageCode, "invoiceReceivedMessage"),
-			webhookEvent.Amount/1000),
+			amountMsat/1000),
 	)
 	if sendErr != nil {
 		log.Errorf("[Webhook] Failed to send notification to user %s: %s",
