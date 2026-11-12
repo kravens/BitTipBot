@@ -85,6 +85,11 @@ func (bot *TipBot) confirmLnurlAuthHandler(ctx intercept.Context) (intercept.Con
 	}
 	lnurlAuthState := sn.(*LnurlAuthState)
 
+	// only the correct user can press
+	if lnurlAuthState.From.Telegram.ID != c.Sender.ID {
+		return ctx, errors.Create(errors.UnknownError)
+	}
+
 	if !lnurlAuthState.Active {
 		return ctx, fmt.Errorf("LnurlAuthData not active.")
 	}
