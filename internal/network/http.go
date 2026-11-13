@@ -49,6 +49,17 @@ func directTransport() *http.Transport {
 	return t
 }
 
+// The bot's own hosts may resolve to loopback (hosts file, split DNS). Paying
+// a lightning address on them must keep working.
+func init() {
+	if u := internal.Configuration.Bot.LNURLHostUrl; u != nil {
+		netguard.Trust(u.Hostname())
+	}
+	if u, err := url.Parse(internal.Configuration.Lnbits.Url); err == nil {
+		netguard.Trust(u.Hostname())
+	}
+}
+
 func GetClient(clientType ClientType) (*http.Client, error) {
 	client := http.Client{
 		Timeout:   10 * time.Second,

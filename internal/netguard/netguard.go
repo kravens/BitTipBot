@@ -52,8 +52,41 @@ var dialer = &net.Dialer{
 	},
 }
 
-// DialContext dials like net.Dialer, but only connects to public addresses.
+// trusted holds hostnames that may resolve to a non-public address: the
+// bot's own LNURL and LNbits hosts often point at loopback through the hosts
+// file or split DNS. Filled once at startup by Trust.
+var trusted = map[string]bool{}
+
+// Trust exempts hosts from the public address check.
+func Trust(hosts ...string) {
+	for _, host := range hosts {
+		if host != "" {
+			trusted[normalizeHost(host)] = true
+		}
+	}
+}
+
+func normalizeHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(host), ".")
+}
+
+// isTrusted reports whether addr ("host:port") names a trusted host.
+func isTrusted(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	return trusted[normalizeHost(host)]
+}
+
+var plainDialer = &net.Dialer{Timeout: 10 * time.Second}
+
+// DialContext dials like net.Dialer, but only connects to public addresses,
+// unless addr names a trusted host.
 func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	if isTrusted(addr) {
+		return plainDialer.DialContext(ctx, network, addr)
+	}
 	return dialer.DialContext(ctx, network, addr)
 }
 
@@ -61,11 +94,14 @@ func DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 // IP or a localhost name. It does not resolve other hostnames, so use it only
 // where the connection is made by a proxy and DialContext cannot be used.
 func CheckHost(addr string) error {
+	if isTrusted(addr) {
+		return nil
+	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr
 	}
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	host = normalizeHost(host)
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return fmt.Errorf("connection to %s refused", host)
 	}

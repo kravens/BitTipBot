@@ -80,3 +80,26 @@ func TestCheckHost(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedHostBypassesCheck(t *testing.T) {
+	defer func() { trusted = map[string]bool{} }()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	_, port, _ := net.SplitHostPort(l.Addr().String())
+	Trust("LocalHost.")
+	conn, err := DialContext(context.Background(), "tcp", "localhost:"+port)
+	if err != nil {
+		t.Fatalf("dial to trusted localhost refused: %v", err)
+	}
+	conn.Close()
+	if err := CheckHost("localhost:" + port); err != nil {
+		t.Errorf("CheckHost refused trusted host: %v", err)
+	}
+	if conn, err := DialContext(context.Background(), "tcp", l.Addr().String()); err == nil {
+		conn.Close()
+		t.Error("literal loopback address was accepted")
+	}
+}
