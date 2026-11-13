@@ -297,14 +297,16 @@ func UpdateUserRecord(user *lnbits.User, bot TipBot) error {
 	// the database row. Callers may hold an old copy of the user, for example
 	// an invoice event stored before a ban, and saving it must not lift the
 	// ban. Only UpdateUserBan changes it.
+	keepBanState := false
 	freshUser := &lnbits.User{Name: user.Name}
 	if tx := bot.DB.Users.First(freshUser); tx.Error == nil && freshUser.Wallet.ID != "" {
 		if user.Wallet.ID != "" && user.Wallet.Inkey == "" {
 			user.Wallet.Inkey = freshUser.Wallet.Inkey
 		}
-		if freshUser.Wallet.Adminkey != "" {
+		if freshUser.Wallet.ID == user.Wallet.ID && freshUser.Wallet.Adminkey != "" {
 			user.Wallet.Adminkey = freshUser.Wallet.Adminkey
 			user.Banned = freshUser.Banned
+			keepBanState = true
 		}
 	}
 
@@ -328,7 +330,12 @@ func UpdateUserRecord(user *lnbits.User, bot TipBot) error {
 		log.Errorf("[UpdateUserRecord] UUID empty! Setting to: %s", user.UUID)
 	}
 
-	tx := bot.DB.Users.Save(user)
+	db := bot.DB.Users
+	if keepBanState {
+		// leave the columns out, so a ban written since the read above stays
+		db = db.Omit("banned", "wallet_adminkey")
+	}
+	tx := db.Save(user)
 	if tx.Error != nil {
 		errmsg := fmt.Sprintf("[UpdateUserRecord] Error: Couldn't update %s's info in Database.", GetUserStr(user.Telegram))
 		log.Errorln(errmsg)
