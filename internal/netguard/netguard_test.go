@@ -25,6 +25,10 @@ func TestIsPublic(t *testing.T) {
 		"::ffff:192.168.1.1":   false,
 		"224.0.0.1":            false,
 		"255.255.255.255":      false,
+		"198.18.0.1":           false,
+		"240.0.0.1":            false,
+		"64:ff9b::7f00:1":      false,
+		"2002:7f00:1::1":       false,
 	} {
 		if got := IsPublic(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("IsPublic(%s) = %v, want %v", addr, got, want)
@@ -63,6 +67,13 @@ func TestCheckHost(t *testing.T) {
 		"[::1]:6060":        false,
 		"192.168.0.10:5000": false,
 		"0.0.0.0:80":        false,
+		"2130706433:80":     false,
+		"127.1:80":          false,
+		"0x7f.1:80":         false,
+		"0x7f000001:80":     false,
+		"017700000001:80":   false,
+		"example.com1:80":   true,
+		"1.example.com:80":  true,
 	} {
 		if err := CheckHost(addr); (err == nil) != ok {
 			t.Errorf("CheckHost(%s) = %v, want ok=%v", addr, err, ok)

@@ -7,18 +7,33 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-// 100.64.0.0/10 is carrier-grade NAT space, also used by overlay networks.
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+// Ranges that are not public but pass netip's own checks.
+var reserved = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT, overlay networks
+	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
+	netip.MustParsePrefix("240.0.0.0/4"),   // reserved
+	netip.MustParsePrefix("64:ff9b::/96"),  // NAT64, embeds an IPv4 address
+	netip.MustParsePrefix("2002::/16"),     // 6to4, embeds an IPv4 address
+}
 
 // IsPublic reports whether ip is an address on the public internet.
 func IsPublic(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !cgnat.Contains(ip)
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		return false
+	}
+	for _, prefix := range reserved {
+		if prefix.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // The check runs at connect time on the resolved address, so it also covers
@@ -54,8 +69,16 @@ func CheckHost(addr string) error {
 	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return fmt.Errorf("connection to %s refused", host)
 	}
-	if ip, err := netip.ParseAddr(host); err == nil && !IsPublic(ip) {
-		return fmt.Errorf("connection to non-public address %s refused", ip)
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if !IsPublic(ip) {
+			return fmt.Errorf("connection to non-public address %s refused", ip)
+		}
+		return nil
+	}
+	// Resolvers also accept IPv4 addresses written as 2130706433, 127.1 or
+	// 0x7f.1. No real hostname ends in a number.
+	if _, err := strconv.ParseUint(host[strings.LastIndex(host, ".")+1:], 0, 64); err == nil {
+		return fmt.Errorf("connection to numeric host %s refused", host)
 	}
 	return nil
 }
