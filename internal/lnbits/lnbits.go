@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LightningTipBot/LightningTipBot/internal/invoicepoll"
 	"github.com/imroc/req"
 )
 
@@ -49,27 +50,8 @@ func (c *Client) CreateAccount(walletName string) (wal Wallet, err error) {
 }
 
 // Invoice creates an invoice associated with this wallet.
-func (w Wallet) Invoice(params InvoiceParams, c *Client) (lntx Invoice, err error) {
-	// custom header with invoice key
-	invoiceHeader := req.Header{
-		"Content-Type": "application/json",
-		"Accept":       "application/json",
-		"X-Api-Key":    w.Inkey,
-	}
-	resp, err := req.Post(c.url+"/api/v1/payments", invoiceHeader, req.BodyJSON(&params))
-	if err != nil {
-		return
-	}
-
-	if resp.Response().StatusCode >= 300 {
-		var reqErr Error
-		resp.ToJSON(&reqErr)
-		err = reqErr
-		return
-	}
-
-	err = resp.ToJSON(&lntx)
-	return
+func (w Wallet) Invoice(params InvoiceParams, c *Client) (Invoice, error) {
+	return c.InvoiceForWallet(w.Inkey, params)
 }
 
 // InvoiceForWallet creates an invoice for a specific wallet using that
@@ -93,6 +75,18 @@ func (c *Client) InvoiceForWallet(walletInkey string, params InvoiceParams) (Inv
 		return result, reqErr
 	}
 	err = resp.ToJSON(&result)
+	if err == nil && params.Webhook != "" && invoicepoll.PaidHook != nil {
+		// the webhook may never arrive, so also poll for the payment
+		hash := result.PaymentHash
+		go invoicepoll.Watch(hash, invoicepoll.Deadline(result.PaymentRequest), 2*time.Second, func() (invoicepoll.Status, error) {
+			p, err := c.Payment(Wallet{Inkey: walletInkey}, hash)
+			return invoicepoll.Status{
+				Paid:       p.Paid && p.Details.PaymentHash == hash && p.Details.Amount > 0,
+				WalletID:   p.Details.WalletID,
+				AmountMsat: p.Details.Amount,
+			}, err
+		})
+	}
 	return result, err
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/LightningTipBot/LightningTipBot/internal/runtime"
 	"github.com/LightningTipBot/LightningTipBot/internal/str"
 	"github.com/skip2/go-qrcode"
+	"github.com/tidwall/buntdb"
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 )
 
@@ -209,6 +210,61 @@ func (bot *TipBot) createInvoiceWithEvent(ctx context.Context, user *lnbits.User
 	// save invoice struct for later use
 	runtime.IgnoreError(bot.Bunt.Set(invoiceEvent))
 	return invoiceEvent, nil
+}
+
+// GetUserByWalletID looks up a user by the id of their LNbits wallet.
+func (bot *TipBot) GetUserByWalletID(walletID string) (*lnbits.User, error) {
+	user := &lnbits.User{}
+	tx := bot.DB.Users.Where("wallet_id = ?", walletID).First(user)
+	return user, tx.Error
+}
+
+// InvoicePaid handles a settled incoming invoice: it runs the callback
+// registered for the payment hash, or tells the user about the payment. The
+// LNbits webhook and the invoice poller both call it, so every payment hash
+// is handled once.
+func (bot *TipBot) InvoicePaid(walletID, paymentHash string, amountMsat int64) {
+	first := false
+	err := bot.Bunt.Update(func(tx *buntdb.Tx) error {
+		_, replaced, err := tx.Set("webhook:"+paymentHash, "1", nil)
+		first = !replaced
+		return err
+	})
+	if err != nil {
+		log.Errorf("[InvoicePaid] Error storing payment_hash %s: %s", paymentHash, err.Error())
+		return
+	}
+	if !first {
+		log.Debugf("[InvoicePaid] payment_hash %s already handled", paymentHash)
+		return
+	}
+	user, err := bot.GetUserByWalletID(walletID)
+	if err != nil {
+		log.Errorf("[InvoicePaid] Error getting user for wallet_id %s: %s", walletID, err.Error())
+		return
+	}
+	log.Infof("[⚡️ InvoicePaid] User %s (%d) received invoice of %d sat.",
+		GetUserStr(user.Telegram), user.Telegram.ID, amountMsat/1000)
+
+	// Try to find and fire a registered invoice callback (e.g. from LNURL-pay or lightning address)
+	invoiceEvent := &InvoiceEvent{Invoice: &Invoice{PaymentHash: paymentHash}}
+	if bot.Bunt.Get(invoiceEvent) == nil {
+		c := InvoiceCallback[invoiceEvent.Callback]
+		if c.Function != nil {
+			if assertErr := AssertEventType(invoiceEvent, c.Type); assertErr != nil {
+				log.Errorln(assertErr)
+			} else {
+				go c.Function(invoiceEvent)
+				return
+			}
+		}
+		log.Warnf("[InvoicePaid] No callback handler for invoice event callback=%d, payment_hash=%s",
+			invoiceEvent.Callback, paymentHash)
+	}
+
+	// Fallback: send a plain "you received X sat" message to the user
+	bot.trySendMessage(user.Telegram,
+		fmt.Sprintf(i18n.Translate(user.Telegram.LanguageCode, "invoiceReceivedMessage"), amountMsat/1000))
 }
 
 func (bot *TipBot) notifyInvoiceReceivedEvent(event Event) {
