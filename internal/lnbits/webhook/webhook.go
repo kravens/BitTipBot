@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal"
@@ -80,16 +81,25 @@ func (w *Server) GetUserByWalletId(walletId string) (*lnbits.User, error) {
 	return user, nil
 }
 
+var paymentHashFormat = regexp.MustCompile("^[0-9a-f]{64}$")
+
 // settledAmount returns the amount in msat that LNbits says the user's wallet
 // received for paymentHash. It fails unless that payment is settled.
 func (w *Server) settledAmount(user *lnbits.User, paymentHash string) (int64, error) {
 	payment, err := w.c.Payment(user.Wallet, paymentHash)
+	// LNbits sends a webhook only once, so a short LNbits hiccup must not
+	// lose the payment event.
+	for try := 0; err != nil && try < 2; try++ {
+		time.Sleep(time.Second)
+		payment, err = w.c.Payment(user.Wallet, paymentHash)
+	}
 	if err != nil {
 		return 0, err
 	}
 	// LNbits only returns the details to the wallet that owns the payment. An
 	// outgoing payment of the same wallet has a negative amount.
-	if !payment.Paid || payment.Details.WalletID != user.Wallet.ID || payment.Details.Amount <= 0 {
+	if !payment.Paid || payment.Details.PaymentHash != paymentHash ||
+		payment.Details.WalletID != user.Wallet.ID || payment.Details.Amount <= 0 {
 		return 0, fmt.Errorf("not a settled incoming payment of wallet %s", user.Wallet.ID)
 	}
 	return payment.Details.Amount, nil
@@ -152,6 +162,14 @@ func (w *Server) receive(writer http.ResponseWriter, request *http.Request) {
 		log.Infof("[Webhook] Ignoring non-success payment (status=%s, payment_hash=%s)",
 			webhookEvent.Status, webhookEvent.PaymentHash)
 		writer.WriteHeader(200)
+		return
+	}
+
+	// The hash becomes part of an LNbits URL and of the replay key, so only
+	// the form LNbits uses is accepted.
+	if !paymentHashFormat.MatchString(webhookEvent.PaymentHash) {
+		log.Errorf("[Webhook] Rejecting webhook with malformed payment_hash")
+		writer.WriteHeader(400)
 		return
 	}
 
