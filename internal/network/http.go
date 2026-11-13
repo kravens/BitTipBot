@@ -39,19 +39,20 @@ func GetClientForScheme(url *url.URL) (*http.Client, error) {
 	}
 }
 
-// directTransport is used when no proxy is configured. The URLs fetched with
-// these clients come from users and remote servers, so it only connects to
-// public addresses.
-var directTransport = func() *http.Transport {
+// directTransport returns the transport used when no proxy is configured. The
+// URLs fetched with these clients come from users and remote servers, so it
+// only connects to public addresses. Every client gets its own transport,
+// because callers change its TLS settings (satdress.SetupHttpClient).
+func directTransport() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.DialContext = netguard.DialContext
 	return t
-}()
+}
 
 func GetClient(clientType ClientType) (*http.Client, error) {
 	client := http.Client{
 		Timeout:   10 * time.Second,
-		Transport: directTransport,
+		Transport: directTransport(),
 	}
 	var cfg *internal.SocksConfiguration
 	switch clientType {
