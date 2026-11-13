@@ -26,7 +26,7 @@ func (s Service) UnbanUser(w http.ResponseWriter, r *http.Request) {
 	user.Banned = false
 	adminSlice := strings.Split(user.Wallet.Adminkey, "_")
 	user.Wallet.Adminkey = adminSlice[len(adminSlice)-1]
-	err = telegram.UpdateUserRecord(user, *s.bot)
+	err = telegram.UpdateUserBan(user, *s.bot)
 	if err != nil {
 		log.Errorf("[ADMIN] could not update user: %v", err)
 		return
@@ -52,7 +52,7 @@ func (s Service) BanUser(w http.ResponseWriter, r *http.Request) {
 		user.Wallet.Adminkey = fmt.Sprintf("%s_%s", reason, user.Wallet.Adminkey)
 	}
 	user.Wallet.Adminkey = fmt.Sprintf("%s_%s", "banned", user.Wallet.Adminkey)
-	err = telegram.UpdateUserRecord(user, *s.bot)
+	err = telegram.UpdateUserBan(user, *s.bot)
 	if err != nil {
 		log.Errorf("[ADMIN] could not update user: %v", err)
 		return

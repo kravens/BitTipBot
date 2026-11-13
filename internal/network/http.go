@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal"
+	"github.com/LightningTipBot/LightningTipBot/internal/netguard"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
@@ -38,9 +39,31 @@ func GetClientForScheme(url *url.URL) (*http.Client, error) {
 	}
 }
 
+// directTransport returns the transport used when no proxy is configured. The
+// URLs fetched with these clients come from users and remote servers, so it
+// only connects to public addresses. Every client gets its own transport,
+// because callers change its TLS settings (satdress.SetupHttpClient).
+func directTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DialContext = netguard.DialContext
+	return t
+}
+
+// The bot's own hosts may resolve to loopback (hosts file, split DNS). Paying
+// a lightning address on them must keep working.
+func init() {
+	if u := internal.Configuration.Bot.LNURLHostUrl; u != nil {
+		netguard.Trust(u.Hostname())
+	}
+	if u, err := url.Parse(internal.Configuration.Lnbits.Url); err == nil {
+		netguard.Trust(u.Hostname())
+	}
+}
+
 func GetClient(clientType ClientType) (*http.Client, error) {
 	client := http.Client{
-		Timeout: 10 * time.Second,
+		Timeout:   10 * time.Second,
+		Transport: directTransport(),
 	}
 	var cfg *internal.SocksConfiguration
 	switch clientType {
@@ -74,6 +97,11 @@ func GetClient(clientType ClientType) (*http.Client, error) {
 		return &client, nil
 	}
 	specialTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		// The proxy resolves hostnames, so only literal addresses and
+		// localhost names can be refused here.
+		if err := netguard.CheckHost(addr); err != nil {
+			return nil, err
+		}
 		return d.Dial(network, addr)
 	}
 	client.Transport = specialTransport

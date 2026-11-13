@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	decodepay "github.com/fiatjaf/ln-decodepay"
 	"github.com/imroc/req"
 	log "github.com/sirupsen/logrus"
 )
@@ -83,7 +84,22 @@ func (c *Client) MintQuote(amount int64, unit string) (*MintQuoteResponse, error
 	}
 	var quote MintQuoteResponse
 	err = resp.ToJSON(&quote)
-	return &quote, err
+	if err != nil {
+		return &quote, err
+	}
+	// Callers pay this invoice as it is from the user's wallet, so the mint
+	// must not be able to bill a different amount than the one asked for.
+	if unit != "sat" {
+		return nil, fmt.Errorf("cannot check the mint quote amount for unit %q", unit)
+	}
+	invoice, err := decodepay.Decodepay(quote.Request)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mint quote invoice: %w", err)
+	}
+	if invoice.MSatoshi != amount*1000 {
+		return nil, fmt.Errorf("mint quote invoice is for %d msat, expected %d msat", invoice.MSatoshi, amount*1000)
+	}
+	return &quote, nil
 }
 
 // CheckMintQuote checks the status of a mint quote (NUT-04).

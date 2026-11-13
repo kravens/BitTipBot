@@ -115,6 +115,9 @@ func (bot *TipBot) GetUserBalance(user *lnbits.User) (amount int64, err error) {
 }
 
 func (bot *TipBot) CreateWalletForTelegramUser(tbUser *tb.User) (*lnbits.User, error) {
+	if isPlaceholderSender(tbUser) {
+		return nil, fmt.Errorf("no wallet for placeholder sender %d", tbUser.ID)
+	}
 	// failsafe: do not create wallet for existing user
 	if _, exists := bot.UserExists(tbUser); exists {
 		return nil, fmt.Errorf("user already exists")

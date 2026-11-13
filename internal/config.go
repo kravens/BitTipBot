@@ -51,6 +51,7 @@ type BotConfiguration struct {
 	LNURLHostUrl   *url.URL            `yaml:"-"`
 	LNURLSendImage bool                `yaml:"lnurl_image"`
 	AdminAPIHost   string              `yaml:"admin_api_host"`
+	AdminAPIToken  string              `yaml:"admin_api_token"`
 }
 
 type TelegramConfiguration struct {

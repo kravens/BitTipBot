@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal"
+	"github.com/LightningTipBot/LightningTipBot/internal/netguard"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
+	"github.com/gorilla/websocket"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 	log "github.com/sirupsen/logrus"
@@ -22,6 +24,27 @@ var (
 	nostrPrivateKeyErrorMessage = "🚫 This is not your public key but your private key! Very dangerous! Try again with your npub..."
 	nostrPublicKeyErrorMessage  = "🚫 There was an error decoding your public key."
 )
+
+// maxRequestedRelays caps the relays taken from a zap request, so they can't
+// push the default relays out of the list.
+const maxRequestedRelays = 10
+
+// go-nostr connects with the default websocket dialer. Relay URLs come from
+// zap requests, so it must only reach public addresses.
+func init() {
+	websocket.DefaultDialer.NetDialContext = netguard.DialContext
+}
+
+// requestedRelays keeps the wss:// relays of a zap request, up to maxRequestedRelays.
+func requestedRelays(relays []string) []string {
+	list := []string{}
+	for _, relay := range relays {
+		if strings.HasPrefix(relay, "wss://") && len(list) < maxRequestedRelays {
+			list = append(list, relay)
+		}
+	}
+	return list
+}
 
 func uniqueSlice(slice []string) []string {
 	keys := make(map[string]bool)
@@ -67,7 +90,7 @@ func (bot *TipBot) publishNostrEvent(ev nostr.Event, relays []string) {
 	// Default relays the zap receipt is published to, in addition to the ones
 	// from the zap request. Large, reliably-up, write-accepting relays only —
 	// profile-only or paid-write relays don't help kind-9735 receipts.
-	relays = append(relays,
+	relays = append(requestedRelays(relays),
 		"wss://relay.damus.io",
 		"wss://nos.lol",
 		"wss://relay.primal.net",

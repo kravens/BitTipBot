@@ -292,19 +292,21 @@ func UpdateUserRecord(user *lnbits.User, bot TipBot) error {
 	// Guard: never overwrite valid wallet keys with empty strings. This can
 	// happen when GetUserBalance calls UpdateUserRecord after receiving only a
 	// partial wallet response from /api/v1/wallet (which omits inkey/adminkey).
-	if user.Wallet.ID != "" && user.Wallet.ID != "" {
-		if user.Wallet.Inkey == "" || user.Wallet.Adminkey == "" {
-			// Re-load the full wallet from the database before saving
-			freshUser := &lnbits.User{Name: user.Name}
-			tx := bot.DB.Users.First(freshUser)
-			if tx.Error == nil && freshUser.Wallet.ID != "" {
-				if user.Wallet.Inkey == "" {
-					user.Wallet.Inkey = freshUser.Wallet.Inkey
-				}
-				if user.Wallet.Adminkey == "" {
-					user.Wallet.Adminkey = freshUser.Wallet.Adminkey
-				}
-			}
+	//
+	// The ban state (banned flag and the "banned_" admin key) always comes from
+	// the database row. Callers may hold an old copy of the user, for example
+	// an invoice event stored before a ban, and saving it must not lift the
+	// ban. Only UpdateUserBan changes it.
+	keepBanState := false
+	freshUser := &lnbits.User{Name: user.Name}
+	if tx := bot.DB.Users.First(freshUser); tx.Error == nil && freshUser.Wallet.ID != "" {
+		if user.Wallet.ID != "" && user.Wallet.Inkey == "" {
+			user.Wallet.Inkey = freshUser.Wallet.Inkey
+		}
+		if freshUser.Wallet.ID == user.Wallet.ID && freshUser.Wallet.Adminkey != "" {
+			user.Wallet.Adminkey = freshUser.Wallet.Adminkey
+			user.Banned = freshUser.Banned
+			keepBanState = true
 		}
 	}
 
@@ -328,13 +330,33 @@ func UpdateUserRecord(user *lnbits.User, bot TipBot) error {
 		log.Errorf("[UpdateUserRecord] UUID empty! Setting to: %s", user.UUID)
 	}
 
-	tx := bot.DB.Users.Save(user)
+	db := bot.DB.Users
+	if keepBanState {
+		// leave the columns out, so a ban written since the read above stays
+		db = db.Omit("banned", "wallet_adminkey")
+	}
+	tx := db.Save(user)
 	if tx.Error != nil {
 		errmsg := fmt.Sprintf("[UpdateUserRecord] Error: Couldn't update %s's info in Database.", GetUserStr(user.Telegram))
 		log.Errorln(errmsg)
 		return tx.Error
 	}
 	log.Tracef("[UpdateUserRecord] Records of user %s updated.", GetUserStr(user.Telegram))
+	if bot.Cache.GoCacheStore != nil {
+		updateCachedUser(user, bot)
+	}
+	return nil
+}
+
+// UpdateUserBan writes the ban state of the user (banned flag and admin key)
+// to the database. UpdateUserRecord never changes these two columns for a
+// user that already has a wallet.
+func UpdateUserBan(user *lnbits.User, bot TipBot) error {
+	tx := bot.DB.Users.Model(&lnbits.User{}).Where("name = ?", user.Name).
+		Updates(map[string]interface{}{"banned": user.Banned, "wallet_adminkey": user.Wallet.Adminkey})
+	if tx.Error != nil {
+		return tx.Error
+	}
 	if bot.Cache.GoCacheStore != nil {
 		updateCachedUser(user, bot)
 	}

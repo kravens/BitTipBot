@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram"
+	"github.com/gorilla/mux"
 	"gorm.io/gorm"
 
 	log "github.com/sirupsen/logrus"
@@ -124,4 +126,21 @@ func dump(r *http.Request) string {
 		return ""
 	}
 	return string(x)
+}
+
+// AdminTokenMiddleware only lets requests through that carry the token as
+// "Authorization: Bearer <token>". With an empty token it rejects everything.
+func AdminTokenMiddleware(token string) mux.MiddlewareFunc {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth := r.Header.Get("Authorization")
+			got := strings.TrimPrefix(auth, "Bearer ")
+			if token == "" || got == auth || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+				log.Warnf("[ADMIN] unauthorized request to %s", r.URL.Path)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
