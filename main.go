@@ -17,6 +17,7 @@ import (
 
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 
+	"github.com/LightningTipBot/LightningTipBot/internal/invoicepoll"
 	"github.com/LightningTipBot/LightningTipBot/internal/lnbits/webhook"
 	"github.com/LightningTipBot/LightningTipBot/internal/price"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram"
@@ -39,6 +40,7 @@ func main() {
 	defer withRecovery()
 	price.NewPriceWatcher().Start()
 	bot := telegram.NewBot()
+	invoicepoll.PaidHook = bot.InvoicePaid
 	startApiServer(&bot)
 	bot.Start()
 }
