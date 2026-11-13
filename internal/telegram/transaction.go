@@ -88,6 +88,11 @@ func (t *Transaction) SendTransaction(bot *TipBot, from *lnbits.User, to *lnbits
 	fromUserStr := GetUserStr(from.Telegram)
 	toUserStr := GetUserStr(to.Telegram)
 
+	// nobody can spend from the wallet of a shared placeholder user
+	if isPlaceholderSender(to.Telegram) {
+		return false, fmt.Errorf("cannot send to placeholder user %s", toUserStr)
+	}
+
 	t.FromWallet = from.Wallet.ID
 	t.FromLNbitsID = from.ID
 

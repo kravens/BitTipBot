@@ -165,9 +165,6 @@ func (bot TipBot) tryLoadUserInterceptor(ctx intercept.Context) (intercept.Conte
 func (bot TipBot) loadReplyToInterceptor(ctx intercept.Context) (intercept.Context, error) {
 	if ctx.Message() != nil {
 		if ctx.Message().ReplyTo != nil {
-			if isPlaceholderSender(ctx.Message().ReplyTo.Sender) {
-				return ctx, fmt.Errorf("[loadReplyToInterceptor] reply to placeholder sender %d", ctx.Message().ReplyTo.Sender.ID)
-			}
 			if ctx.Message().ReplyTo.Sender != nil {
 				user, _ := GetUser(ctx.Message().ReplyTo.Sender, bot)
 				user.Telegram = ctx.Message().ReplyTo.Sender
