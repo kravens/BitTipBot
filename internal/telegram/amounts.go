@@ -79,10 +79,11 @@ func GetAmount(input string) (amount int64, err error) {
 				log.Errorln(err)
 				return 0, err
 			}
-			if !(price.Price[currency] > 0) {
+			p := price.Get(currency)
+			if !(p > 0) {
 				return 0, fmt.Errorf("price is zero")
 			}
-			amount = int64(fmount / price.Price[currency] * float64(100_000_000))
+			amount = int64(fmount / p * float64(100_000_000))
 			return amount, nil
 		}
 	}
@@ -99,10 +100,11 @@ func GetAmount(input string) (amount int64, err error) {
 }
 
 func SatoshisToFiat(amount int64, currency string) (fiat float64, err error) {
-	if !(price.Price[currency] > 0) {
+	p := price.Get(currency)
+	if !(p > 0) {
 		return 0, fmt.Errorf("price is zero")
 	}
-	fiat = float64(amount) / 100_000_000 * price.Price[currency]
+	fiat = float64(amount) / 100_000_000 * p
 	return fiat, nil
 }
 
