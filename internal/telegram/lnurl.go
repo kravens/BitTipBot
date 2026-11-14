@@ -27,6 +27,15 @@ import (
 func (bot *TipBot) cancelLnUrlHandler(c *tb.Callback) {
 }
 
+// callbackHost returns only the host of an LNURL callback for logging: the
+// query of a withdraw or auth callback carries its k1.
+func callbackHost(callback string) string {
+	if u, err := url.Parse(callback); err == nil {
+		return u.Host
+	}
+	return "[unparsable callback]"
+}
+
 // lnurlHandler is invoked on /lnurl command
 func (bot *TipBot) lnurlHandler(ctx intercept.Context) (intercept.Context, error) {
 	// commands:
@@ -37,7 +46,6 @@ func (bot *TipBot) lnurlHandler(ctx intercept.Context) (intercept.Context, error
 	if m.Chat.Type != tb.ChatPrivate {
 		return ctx, errors.Create(errors.NoPrivateChatError)
 	}
-	log.Infof("[lnurlHandler] %s", m.Text)
 	user := LoadUser(ctx)
 	if user.Wallet.ID == "" {
 		return ctx, errors.Create(errors.UserNoWalletError)
@@ -79,14 +87,14 @@ func (bot *TipBot) lnurlHandler(ctx intercept.Context) (intercept.Context, error
 	switch params.(type) {
 	case lnurl.LNURLAuthParams:
 		authParams := &LnurlAuthState{LNURLAuthParams: params.(lnurl.LNURLAuthParams)}
-		log.Infof("[LNURL-auth] %s", authParams.LNURLAuthParams.Callback)
+		log.Infof("[LNURL-auth] %s", callbackHost(authParams.LNURLAuthParams.Callback))
 		bot.tryDeleteMessage(statusMsg)
 		ctx.Context, err = bot.lnurlAuthHandler(ctx, m, authParams)
 		return ctx, err
 
 	case lnurl.LNURLPayParams:
 		payParams := &LnurlPayState{LNURLPayParams: params.(lnurl.LNURLPayParams)}
-		log.Infof("[LNURL-p] %s", payParams.LNURLPayParams.Callback)
+		log.Infof("[LNURL-p] %s", callbackHost(payParams.LNURLPayParams.Callback))
 		bot.tryDeleteMessage(statusMsg)
 
 		// display the metadata image from the first LNURL-p response
@@ -104,7 +112,7 @@ func (bot *TipBot) lnurlHandler(ctx intercept.Context) (intercept.Context, error
 
 	case lnurl.LNURLWithdrawResponse:
 		withdrawParams := &LnurlWithdrawState{LNURLWithdrawResponse: params.(lnurl.LNURLWithdrawResponse)}
-		log.Infof("[LNURL-w] %s", withdrawParams.LNURLWithdrawResponse.Callback)
+		log.Infof("[LNURL-w] %s", callbackHost(withdrawParams.LNURLWithdrawResponse.Callback))
 		bot.tryDeleteMessage(statusMsg)
 		bot.lnurlWithdrawHandler(ctx, withdrawParams)
 	default:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/errors"
 
@@ -224,11 +225,26 @@ func (bot TipBot) requirePrivateChatInterceptor(ctx intercept.Context) (intercep
 
 const photoTag = "<Photo>"
 
+// redactSecrets replaces words that can carry a secret before a message is
+// logged: nostr private keys, bech32 LNURLs (a withdraw LNURL holds its k1)
+// and URLs with a k1 parameter.
+func redactSecrets(text string) string {
+	words := strings.Fields(text)
+	for i, word := range words {
+		w := strings.ToLower(word)
+		if strings.HasPrefix(w, "nsec1") || strings.Contains(w, "lnurl1") ||
+			strings.HasPrefix(w, "lnurlw:") || strings.Contains(w, "k1=") {
+			words[i] = "[redacted]"
+		}
+	}
+	return strings.Join(words, " ")
+}
+
 func (bot TipBot) logMessageInterceptor(ctx intercept.Context) (intercept.Context, error) {
 	if ctx.Message() != nil {
 
 		if ctx.Message().Text != "" {
-			log_string := fmt.Sprintf("[%s:%d %s:%d] %s", ctx.Message().Chat.Title, ctx.Message().Chat.ID, GetUserStr(ctx.Message().Sender), ctx.Message().Sender.ID, ctx.Message().Text)
+			log_string := fmt.Sprintf("[%s:%d %s:%d] %s", ctx.Message().Chat.Title, ctx.Message().Chat.ID, GetUserStr(ctx.Message().Sender), ctx.Message().Sender.ID, redactSecrets(ctx.Message().Text))
 			if ctx.Message().IsReply() {
 				log_string = fmt.Sprintf("%s -> %s", log_string, GetUserStr(ctx.Message().ReplyTo.Sender))
 			}
