@@ -130,15 +130,16 @@ func (w Lnurl) Handle(writer http.ResponseWriter, request *http.Request) {
 			err = json.Unmarshal([]byte(zapEventQuery), &zapEvent)
 			if err != nil {
 				log.Errorf("[handleLnUrl] Couldn't parse nostr event: %v", err)
+				// a half-decoded event may carry a Sig; treat it as no zap
+				zapEvent = nostr.Event{}
 			} else {
 				valid, err := zapEvent.CheckSignature()
 				if !valid || err != nil {
 					log.Errorf("[handleLnUrl] Nostr NIP-57 zap event signature invalid: %v", err)
 					return
 				}
-				if len(zapEvent.Tags) == 0 || zapEvent.Tags.GetFirst([]string{"p"}) == nil {
-					// zapEvent.Tags.GetFirst([]string{"e"}) == nil {
-					log.Errorf("[handleLnUrl] Nostr NIP-57 zap event validation error")
+				if err := checkZapRequest(zapEvent, amount); err != nil {
+					api.NotFoundHandler(writer, fmt.Errorf("[handleLnUrl] Nostr NIP-57 zap event validation error: %v", err))
 					return
 				}
 
@@ -387,14 +388,16 @@ func (w Lnurl) serveLNURLpSecond(username string, amount_msat int64, comment str
 			PubKey:    pub,
 			CreatedAt: time.Now(),
 			Kind:      9735,
+			// copy only the values: checkZapRequest made sure there is
+			// exactly one p tag and at most one e tag
 			Tags: nostr.Tags{
-				*zapEvent.Tags.GetFirst([]string{"p"}),
-				[]string{"bolt11", invoice.PaymentRequest},
-				[]string{"description", zapEventSerializedStr},
+				nostr.Tag{"p", zapTags(zapEvent.Tags, "p")[0][1]},
+				nostr.Tag{"bolt11", invoice.PaymentRequest},
+				nostr.Tag{"description", zapEventSerializedStr},
 			},
 		}
-		if zapEvent.Tags.GetFirst([]string{"e"}) != nil {
-			nip57Receipt.Tags = nip57Receipt.Tags.AppendUnique(*zapEvent.Tags.GetFirst([]string{"e"}))
+		if e := zapTags(zapEvent.Tags, "e"); len(e) == 1 {
+			nip57Receipt.Tags = append(nip57Receipt.Tags, nostr.Tag{"e", e[0][1]})
 		}
 		nip57Receipt.Sign(pk)
 	}
