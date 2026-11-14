@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,10 @@ func New(b *telegram.TipBot) Service {
 		bot: b,
 	}
 }
+
+// validUsername matches Telegram usernames and the bot's anonymous ids
+// (lowercased). Anything else is refused before it reaches a template.
+var validUsername = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 
 const botImage = "https://avatars.githubusercontent.com/u/88730856?v=7"
 
@@ -70,6 +75,10 @@ func (s Service) getTelegramUserPictureURL(username string) (string, error) {
 func (s Service) UserPageHandler(w http.ResponseWriter, r *http.Request) {
 	// https://ln.tips/@<username>
 	username := strings.ToLower(mux.Vars(r)["username"])
+	if !validUsername.MatchString(username) {
+		http.NotFound(w, r)
+		return
+	}
 	callback := fmt.Sprintf("%s/.well-known/lnurlp/%s", internal.Configuration.Bot.LNURLHostName, username)
 	log.Infof("[UserPage] rendering page of %s", username)
 	lnurlEncode, err := lnurl.LNURLEncode(callback)
@@ -95,6 +104,10 @@ func (s Service) UserPageHandler(w http.ResponseWriter, r *http.Request) {
 func (s Service) UserWebAppHandler(w http.ResponseWriter, r *http.Request) {
 	// https://ln.tips/app/<username>
 	username := strings.ToLower(mux.Vars(r)["username"])
+	if !validUsername.MatchString(username) {
+		http.NotFound(w, r)
+		return
+	}
 	callback := fmt.Sprintf("%s/.well-known/lnurlp/%s", internal.Configuration.Bot.LNURLHostName, username)
 	log.Infof("[UserPage] rendering webapp of %s", username)
 	lnurlEncode, err := lnurl.LNURLEncode(callback)
