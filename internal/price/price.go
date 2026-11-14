@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -21,9 +22,19 @@ type PriceWatcher struct {
 }
 
 var (
-	Price map[string]float64
-	P     *PriceWatcher
+	// prices is written by Watch and read by request handlers; use Get.
+	prices   = map[string]float64{}
+	pricesMu sync.RWMutex
+	P        *PriceWatcher
 )
+
+// Get returns the last average price of one bitcoin in currency, or 0 when
+// none is known yet.
+func Get(currency string) float64 {
+	pricesMu.RLock()
+	defer pricesMu.RUnlock()
+	return prices[currency]
+}
 
 func NewPriceWatcher() *PriceWatcher {
 	pricewatcher := &PriceWatcher{
@@ -47,7 +58,6 @@ func NewPriceWatcher() *PriceWatcher {
 	}
 	pricewatcher.Exchanges["coinbase"] = pricewatcher.GetCoinbasePrice
 	pricewatcher.Exchanges["bitfinex"] = pricewatcher.GetBitfinexPrice
-	Price = make(map[string]float64, 0)
 	log.Infof("[PriceWatcher] Watcher started")
 	P = pricewatcher
 	return pricewatcher
@@ -74,8 +84,13 @@ func (p *PriceWatcher) Watch() error {
 				// log.Debugf("[PriceWatcher] %s %s price: %f", exchange, currency, fprice)
 				time.Sleep(time.Second * time.Duration(2))
 			}
-			Price[currency] = avg_price / float64(n_responses)
-			// log.Debugf("[PriceWatcher] Average %s price: %f", currency, Price[currency])
+			if n_responses == 0 {
+				// keep the last known price instead of storing NaN
+				continue
+			}
+			pricesMu.Lock()
+			prices[currency] = avg_price / float64(n_responses)
+			pricesMu.Unlock()
 		}
 		time.Sleep(p.UpdateInterval)
 	}

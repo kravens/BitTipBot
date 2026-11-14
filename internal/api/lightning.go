@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal"
 	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram"
 	"github.com/gorilla/mux"
-	"github.com/r3labs/sse"
 )
 
 type Service struct {
@@ -141,6 +139,16 @@ type InvoiceStream struct {
 	WebhookStatus interface{} `json:"webhook_status"`
 }
 
+// sseClient has no timeout: the stream stays open until either side closes
+// it. One shared transport, so finished streams don't leave idle connections
+// behind in a transport nobody uses again.
+var sseClient = &http.Client{Transport: &http.Transport{DisableCompression: true}}
+
+// InvoiceStream passes the LNbits payment event stream of the user's wallet
+// through. The upstream request is bound to the client's request, so the
+// LNbits stream is closed as soon as the client goes away. The old version
+// only noticed a gone client when the next event arrived, and kept a
+// goroutine and an LNbits connection per stream until then.
 func (s Service) InvoiceStream(w http.ResponseWriter, r *http.Request) {
 	user := telegram.LoadUser(r.Context())
 	flusher, ok := w.(http.Flusher)
@@ -148,41 +156,37 @@ func (s Service) InvoiceStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
 		return
 	}
-	client := sse.NewClient(fmt.Sprintf("%s/api/v1/payments/sse", internal.Configuration.Lnbits.Url))
-	client.Connection.Transport = &http.Transport{DisableCompression: true}
-	client.Headers = map[string]string{"X-Api-Key": user.Wallet.Inkey}
-	c := make(chan *sse.Event)
-	err := client.SubscribeChan("", c)
+	upstream, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+		fmt.Sprintf("%s/api/v1/payments/sse", internal.Configuration.Lnbits.Url), nil)
 	if err != nil {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
 		return
 	}
-out:
-	for {
-		select {
-		case msg := <-c:
-			select {
-			case <-r.Context().Done():
-				client.Unsubscribe(c)
-				break out
-			default:
-				written, err := fmt.Fprintf(w, "event: %s\n", string(msg.Event))
-				if err != nil || written == 0 {
-					break out
-				}
-				written, err = fmt.Fprintf(w, "data: %s\n", string(msg.Data))
-				if err != nil || written == 0 {
-					break out
-				}
-				written, err = fmt.Fprint(w, "\n")
-				if err != nil || written == 0 {
-					break out
-				}
-				flusher.Flush()
-			}
-		}
-
+	upstream.Header.Set("X-Api-Key", user.Wallet.Inkey)
+	upstream.Header.Set("Accept", "text/event-stream")
+	resp, err := sseClient.Do(upstream)
+	if err != nil {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
 	}
-	close(c)
-	time.Sleep(time.Second * 5)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	buf := make([]byte, 4096)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			return
+		}
+	}
 }

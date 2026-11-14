@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 // Much of this is from github.com/fiatjaf/makeinvoice
@@ -30,7 +29,6 @@ type LNDParams struct {
 }
 
 func (l LNDParams) getCert() []byte { return l.Cert }
-func (l LNDParams) isLocal() bool   { return strings.HasPrefix(l.Host, "https://127.0.0.1") }
 func (l LNDParams) isTor() bool     { return strings.Index(l.Host, ".onion") != -1 }
 
 type LNBitsParams struct {
@@ -41,12 +39,10 @@ type LNBitsParams struct {
 
 func (l LNBitsParams) getCert() []byte { return []byte(l.Cert) }
 func (l LNBitsParams) isTor() bool     { return strings.Index(l.Host, ".onion") != -1 }
-func (l LNBitsParams) isLocal() bool   { return strings.HasPrefix(l.Host, "https://127.0.0.1") }
 
 type BackendParams interface {
 	getCert() []byte
 	isTor() bool
-	isLocal() bool
 }
 
 type Params struct {
@@ -65,19 +61,14 @@ type CheckInvoiceParams struct {
 	Status  string
 }
 
-func SetupHttpClient(useProxy bool, cert []byte) (*http.Client, error) {
-	var client *http.Client
-	if !useProxy {
-		client = &http.Client{
-			Timeout: 10 * time.Second,
-		}
-	} else {
-		var err error
-		client, err = network.GetClient(network.ClientTypeTor)
-		if err != nil {
-			return nil, err
-		}
-
+// SetupHttpClient returns the client for a user's node. Node hosts come from
+// users, so every request goes through network.GetClient, which refuses
+// non-public addresses. There is no exception for loopback hosts: a prefix
+// check on the URL also matched forms like https://127.0.0.1@10.0.0.5.
+func SetupHttpClient(cert []byte) (*http.Client, error) {
+	client, err := network.GetClient(network.ClientTypeTor)
+	if err != nil {
+		return nil, err
 	}
 	// use a cert or skip TLS verification?
 	if len(cert) > 0 {
@@ -102,8 +93,7 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 		return CheckInvoiceParams{}, errors.New("no backend specified")
 	}
 
-	var err error
-	Client, err := SetupHttpClient(!params.Backend.isLocal(), params.Backend.getCert())
+	Client, err := SetupHttpClient(params.Backend.getCert())
 	if err != nil {
 		log.Errorf(err.Error())
 		return CheckInvoiceParams{}, err
@@ -238,8 +228,7 @@ func CheckInvoice(params CheckInvoiceParams) (CheckInvoiceParams, error) {
 		return CheckInvoiceParams{}, errors.New("no backend specified")
 	}
 
-	var err error
-	Client, err := SetupHttpClient(!params.Backend.isLocal(), params.Backend.getCert())
+	Client, err := SetupHttpClient(params.Backend.getCert())
 	if err != nil {
 		log.Errorf(err.Error())
 		return CheckInvoiceParams{}, err

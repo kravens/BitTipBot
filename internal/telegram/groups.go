@@ -424,6 +424,14 @@ func (bot TipBot) handleJoinTicketPayWall(ctx intercept.Context) (intercept.Cont
 	return ctx, err
 }
 func (bot TipBot) removeJoinTicketPayWallHandler(ctx intercept.Context) (intercept.Context, error) {
+	m := ctx.Message()
+	if m.Chat.Type == tb.ChatPrivate {
+		return ctx, fmt.Errorf("not in group")
+	}
+	// only the group owner may remove the paywall, same as adding it
+	if !bot.isOwner(m.Chat, m.Sender) {
+		return ctx, fmt.Errorf("not owner")
+	}
 	groupName := strconv.FormatInt(ctx.Chat().ID, 10)
 	tx := bot.DB.Groups.Where("id = ? COLLATE NOCASE", groupName).Delete(&Group{})
 	if tx.Error != nil {
