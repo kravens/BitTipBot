@@ -69,10 +69,13 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 
 	// send the owner invoice to chat
 	// TicketEvent is used for callback button (if user has balance)
+	// One event per joiner: keyed by the group alone, a second joiner would
+	// overwrite the first one's event and pay button.
+	eventID := fmt.Sprintf("%s_%d", id, ctx.Sender().ID)
 	ticketEvent := TicketEvent{
 		// invoice event is used for invoice callbacks (do not kick if invoice is paid)
 		InvoiceEvent: &InvoiceEvent{
-			Base: storage.New(storage.ID(fmt.Sprintf("invoice-event:%s", id))),
+			Base: storage.New(storage.ID(fmt.Sprintf("invoice-event:%s", eventID))),
 			Invoice: &Invoice{PaymentHash: invoice.PaymentHash,
 				PaymentRequest: invoice.PaymentRequest,
 				Amount:         ticket.Ticket.Price,
@@ -84,7 +87,7 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 			LanguageCode: ctx.Value("publicLanguageCode").(string),
 		},
 		Group: group,
-		Base:  storage.New(storage.ID(fmt.Sprintf("ticket-event:%s", id))),
+		Base:  storage.New(storage.ID(fmt.Sprintf("ticket-event:%s", eventID))),
 	}
 	captionText := fmt.Sprintf("⚠️ %s, this group requires you to pay *%d sat* to join. You have 15 minutes to pay or you will be kicked for one day.", GetUserStrMd(ctx.Message().Sender), ticket.Ticket.Price)
 
@@ -136,7 +139,6 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 		return ctx, err
 	}
 	bot.startTicketCallbackFunctionTimer(ticket)
-	fmt.Println(ctx.Message())
 	return ctx, nil
 }
 
@@ -149,6 +151,16 @@ func (bot *TipBot) stopJoinTicketTimer(event Event) {
 	if err != nil {
 		log.Errorf("[stopJoinTicketTimer] %v", err)
 		return
+	}
+	// The joiner has paid: stop the kick timer before anything else, so a
+	// failed commission payment can't get a paying user banned.
+	d := time.Until(time.Now().Add(defaultTicketDuration))
+	bot.tryDeleteMessage(ev.Message)
+	t := runtime.GetFunction(ticket.Key(), runtime.WithDuration(d))
+	t.StopChan <- struct{}{}
+	err = bot.Bunt.Delete(ticket.Key(), &ticket)
+	if err != nil {
+		log.Errorf("[stopJoinTicketTimer] %v", err)
 	}
 	if commission := getTicketCommission(ticket.Ticket); commission > 0 {
 		me, err := GetUser(bot.Telegram.Me, *bot)
@@ -172,15 +184,6 @@ func (bot *TipBot) stopJoinTicketTimer(event Event) {
 			return
 		}
 	}
-
-	d := time.Until(time.Now().Add(defaultTicketDuration))
-	bot.tryDeleteMessage(ev.Message)
-	t := runtime.GetFunction(ticket.Key(), runtime.WithDuration(d))
-	t.StopChan <- struct{}{}
-	err = bot.Bunt.Delete(ticket.Key(), &ticket)
-	if err != nil {
-		log.Errorf("[stopJoinTicketTimer] %v", err)
-	}
 }
 
 // startTicketCallbackFunctionTimer will start a ticket which will ban users if the timer runs out.
@@ -202,7 +205,9 @@ func (bot *TipBot) startTicketCallbackFunctionTimer(ticket JoinTicket) {
 			log.Errorln("🧨 could not fetch / ban chat member")
 			return
 		}
-		// ban user
+		// ban user for one day, as the join message says; until_date 0
+		// would ban forever
+		member.RestrictedUntil = time.Now().Add(24 * time.Hour).Unix()
 		err = bot.Telegram.Ban(ticket.Message.Chat, member)
 		if err != nil {
 			log.Errorln(err)
