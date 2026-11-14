@@ -65,7 +65,7 @@ func AuthorizationMiddleware(database *gorm.DB, authType AuthType, accessType Ac
 		// first we make sure that the password is not already "banned_"
 		if strings.Contains(password, "_") || strings.HasPrefix(password, "banned_") {
 			w.WriteHeader(401)
-			log.Warnf("[api] Banned user %s. Not forwarding request", password)
+			log.Warnf("[api] Banned key used. Not forwarding request")
 			return
 		}
 		// then we check whether the "normal" password provided is in the database (it should be not if the user is banned)
@@ -83,6 +83,12 @@ func AuthorizationMiddleware(database *gorm.DB, authType AuthType, accessType Ac
 		}
 		if tx.Error != nil {
 			log.Warnf("[api] could not load access key: %v", tx.Error)
+			w.WriteHeader(401)
+			return
+		}
+		// a ban only renames the admin key, so the invoice key still matches
+		if user.Banned {
+			log.Warnf("[api] Banned user %s. Not forwarding request", telegram.GetUserStr(user.Telegram))
 			w.WriteHeader(401)
 			return
 		}
