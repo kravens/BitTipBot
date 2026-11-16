@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
@@ -26,22 +27,10 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 	txstr := ""
 	// for _, p := range payments {
 	payments := txlist.Payments
-	pagenr := txlist.CurrentPage
-	tx_per_page := txlist.TxPerPage
-	if pagenr > (len(payments)+1)/tx_per_page {
-		pagenr = 0
-	}
-	if len(payments) < tx_per_page {
-		tx_per_page = len(payments)
-	}
-	start := pagenr * (tx_per_page - 1)
-	end := start + tx_per_page
-	if end >= len(payments) {
-		end = len(payments) - 1
-	}
-	for i := start; i <= end; i++ {
+	start, end := pageBounds(len(payments), txlist.CurrentPage, txlist.TxPerPage)
+	for i := start; i < end; i++ {
 		p := payments[i]
-		if p.Pending {
+		if p.Pending || p.Status == "pending" {
 			txstr += "🔄"
 		} else {
 			if p.Amount < 0 {
@@ -50,14 +39,7 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 				txstr += "🟢"
 			}
 		}
-		// timestr := time.Unix(int64(p.Time), 0).UTC().Format("2 Jan 06 15:04")
-		layout := "2006-01-02T15:04:05.999999-07:00"
-    	t, err := time.Parse(layout, p.Time)
-    	if err != nil {
-        	t = time.Unix(0, 0) // fallback
-    	}
-    	timestr := t.UTC().Format("2 Jan 06 15:04")
-		txstr += fmt.Sprintf("` %s`", timestr)
+		txstr += fmt.Sprintf("` %s`", formatPaymentTime(p.Time))
 		txstr += fmt.Sprintf("` %+d sat`", p.Amount/1000)
 		if p.Fee > 0 {
 			fee := p.Fee
@@ -80,6 +62,46 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 	return txstr
 }
 
+// pageCount returns how many pages n transactions fill, at least one.
+func pageCount(n, perPage int) int {
+	if n <= 0 || perPage <= 0 {
+		return 1
+	}
+	return (n + perPage - 1) / perPage
+}
+
+// pageBounds returns the half-open index range [start, end) of a page. A page
+// past the end falls back to the first page.
+func pageBounds(n, page, perPage int) (start, end int) {
+	if page < 0 || page >= pageCount(n, perPage) {
+		page = 0
+	}
+	start = page * perPage
+	end = start + perPage
+	if end > n {
+		end = n
+	}
+	return start, end
+}
+
+// formatPaymentTime renders an LNbits payment time. LNbits (pydantic 2) sends
+// UTC as "...Z"; offsets like "+00:00", offset-less times (taken as UTC) and a
+// space instead of the "T" are accepted too. Unparseable input is shown as-is
+// instead of as 1970, without backticks because it lands in a code span.
+func formatPaymentTime(s string) string {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format("2 Jan 06 15:04")
+		}
+	}
+	return strings.ReplaceAll(s, "`", "")
+}
+
 var (
 	transactionsMeno           = &tb.ReplyMarkup{ResizeKeyboard: true}
 	btnLeftTransactionsButton  = inlineTipjarMenu.Data("◀️", "left_transactions")
@@ -90,7 +112,9 @@ func (bot *TipBot) makeTransactionsKeyboard(ctx intercept.Context, txlist Transa
 	leftTransactionsButton := transactionsMeno.Data("←", "left_transactions", txlist.ID)
 	rightTransactionsButton := transactionsMeno.Data("→", "right_transactions", txlist.ID)
 
-	if txlist.CurrentPage == 0 {
+	if txlist.MaxPages <= 1 {
+		transactionsMeno.Inline()
+	} else if txlist.CurrentPage == 0 {
 		transactionsMeno.Inline(
 			transactionsMeno.Row(
 				leftTransactionsButton),
@@ -126,7 +150,7 @@ func (bot *TipBot) transactionsHandler(ctx intercept.Context) (intercept.Context
 		LanguageCode: ctx.Value("userLanguageCode").(string),
 		CurrentPage:  0,
 		TxPerPage:    tx_per_page,
-		MaxPages:     (len(payments)+1)/tx_per_page + 1,
+		MaxPages:     pageCount(len(payments), tx_per_page),
 	}
 	bot.Cache.Set(fmt.Sprintf("%s_transactions", user.Name), transactionsList, &store.Options{Expiration: 1 * time.Minute})
 	txstr := transactionsList.printTransactions(ctx)
