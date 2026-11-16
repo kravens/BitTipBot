@@ -240,7 +240,9 @@ func (bot *TipBot) acceptInlineCashuHandler(ctx intercept.Context) (intercept.Co
 		restoreShare()
 		return ctx, err
 	}
-	if _, err = from.Wallet.Pay(lnbits.PaymentParams{Out: true, Bolt11: quote.Request}, bot.Client); err != nil {
+	// A pending payment may still go through: keep the record and let the
+	// quote check below decide.
+	if _, err = from.Wallet.Pay(lnbits.PaymentParams{Out: true, Bolt11: quote.Request}, bot.Client); err != nil && err != lnbits.ErrPaymentPending {
 		log.Errorf("[cashu claim] sender %s could not pay mint invoice: %s", GetUserStr(from.Telegram), err.Error())
 		_ = record.Delete(record, bot.Bunt) // nothing was paid
 		restoreShare()

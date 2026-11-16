@@ -202,6 +202,7 @@ invoicePaidText           = """✅ Invoice paid."""
 
 paymentCancelledMessage     = """🚫 Payment cancelled."""
 invoicePaidMessage          = """⚡️ Payment sent."""
+invoicePendingMessage       = """⏳ Payment in progress. The amount is reserved; I will tell you when it is sent or has failed."""
 invoicePublicPaidMessage    = """⚡️ Payment sent by %s."""
 invalidInvoiceHelpMessage    = """Did you enter a valid Lightning invoice? Try /send if you want to send to a Telegram user or to a Lightning address."""
 invoiceNoAmountMessage       = """🚫 Can't pay invoices without an amount."""

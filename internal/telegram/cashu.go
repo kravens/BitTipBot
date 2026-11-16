@@ -484,7 +484,9 @@ func (bot *TipBot) executeCashuMint(ctx intercept.Context, user *lnbits.User, se
 		Out:    true,
 		Bolt11: quote.Request,
 	}, bot.Client)
-	if err != nil {
+	// A pending payment may still go through: keep the record and let the
+	// quote check below decide.
+	if err != nil && err != lnbits.ErrPaymentPending {
 		// Nothing was paid — drop the record so it doesn't show as recoverable.
 		log.Errorf("[cashu mint] Payment to mint failed: %s", err.Error())
 		_ = record.Delete(record, bot.Bunt)

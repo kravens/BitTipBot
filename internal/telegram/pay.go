@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
 
@@ -211,6 +212,13 @@ func (bot *TipBot) confirmPayHandler(ctx intercept.Context) (intercept.Context, 
 	log.Infof("[/pay] Attempting %s's invoice %s (%d sat)", userStr, payData.ID, payData.Amount)
 	// pay invoice
 	invoice, err := user.Wallet.Pay(lnbits.PaymentParams{Out: true, Bolt11: payData.Invoice}, bot.Client)
+	if err == lnbits.ErrPaymentPending {
+		// neither paid nor failed yet: say so and report the result later
+		log.Warnf("[/pay] Invoice %s of %s is still pending", payData.ID, userStr)
+		bot.tryEditMessage(ctx.Message(), i18n.Translate(payData.LanguageCode, "invoicePendingMessage"), &tb.ReplyMarkup{})
+		go bot.reportPendingPayment(user, invoice.PaymentHash, payData.LanguageCode)
+		return ctx, err
+	}
 	if err != nil {
 		errmsg := fmt.Sprintf("[/pay] Could not pay invoice of %s: %s", userStr, err)
 		err = fmt.Errorf(i18n.Translate(payData.LanguageCode, "invoiceUndefinedErrorMessage"))
@@ -284,4 +292,21 @@ func (bot *TipBot) cancelPaymentHandler(ctx intercept.Context) (intercept.Contex
 	// bot.tryEditMessage(c.Message, i18n.Translate(payData.LanguageCode, "paymentCancelledMessage"), &tb.ReplyMarkup{})
 	return ctx, payData.Inactivate(payData, bot.Bunt)
 
+}
+
+// reportPendingPayment waits for a payment that Pay left as pending and tells
+// the user how it ended. The checks also make LNbits release the reserved
+// amount as soon as the payment has failed.
+// ponytail: in-memory only, a bot restart drops the watch; LNbits then settles
+// the payment in its own background task and the user sees it in /transactions.
+func (bot *TipBot) reportPendingPayment(user *lnbits.User, paymentHash string, languageCode string) {
+	err := bot.Client.AwaitPayment(user.Wallet, paymentHash, 24*time.Hour, time.Minute)
+	switch {
+	case err == nil:
+		bot.trySendMessage(user.Telegram, i18n.Translate(languageCode, "invoicePaidMessage"))
+	case err == lnbits.ErrPaymentFailed:
+		bot.trySendMessage(user.Telegram, fmt.Sprintf(i18n.Translate(languageCode, "invoicePaymentFailedMessage"), i18n.Translate(languageCode, "invoiceUndefinedErrorMessage")))
+	default:
+		log.Warnf("[/pay] Payment %s of %s is still pending after a day", paymentHash, GetUserStr(user.Telegram))
+	}
 }

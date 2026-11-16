@@ -196,6 +196,7 @@ invoiceHelpText           = """📖 Oeps, dat werkte niet. %s
 
 paymentCancelledMessage     = """🚫 Betaling geannuleerd."""
 invoicePaidMessage          = """⚡️ Betaling verzonden."""
+invoicePendingMessage       = """⏳ Betaling onderweg. Het bedrag is gereserveerd; ik laat het weten zodra de betaling is verzonden of mislukt."""
 invoicePublicPaidMessage    = """⚡️ Betaling verzonden door %s."""
 invalidInvoiceHelpMessage    = """Heeft u een geldige Lightning factuur ingevoerd? Probeer /send als u wilt verzenden naar een Telegram gebruiker of Lightning address."""
 invoiceNoAmountMessage       = """🚫 Kan facturen niet betalen zonder een bedrag."""
