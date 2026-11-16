@@ -254,7 +254,15 @@ func (bot *TipBot) InvoicePaid(walletID, paymentHash string, amountMsat int64) {
 			if assertErr := AssertEventType(invoiceEvent, c.Type); assertErr != nil {
 				log.Errorln(assertErr)
 			} else {
-				go c.Function(invoiceEvent)
+				go func() {
+					// a panic here would take the whole bot down with it
+					defer func() {
+						if r := recover(); r != nil {
+							log.Errorf("[InvoicePaid] callback %d panicked for payment_hash=%s: %v", invoiceEvent.Callback, paymentHash, r)
+						}
+					}()
+					c.Function(invoiceEvent)
+				}()
 				return
 			}
 		}
