@@ -50,14 +50,7 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 				txstr += "🟢"
 			}
 		}
-		// timestr := time.Unix(int64(p.Time), 0).UTC().Format("2 Jan 06 15:04")
-		layout := "2006-01-02T15:04:05.999999-07:00"
-    	t, err := time.Parse(layout, p.Time)
-    	if err != nil {
-        	t = time.Unix(0, 0) // fallback
-    	}
-    	timestr := t.UTC().Format("2 Jan 06 15:04")
-		txstr += fmt.Sprintf("` %s`", timestr)
+		txstr += fmt.Sprintf("` %s`", formatPaymentTime(p.Time))
 		txstr += fmt.Sprintf("` %+d sat`", p.Amount/1000)
 		if p.Fee > 0 {
 			fee := p.Fee
@@ -78,6 +71,18 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 	}
 	txstr += fmt.Sprintf("\nShowing %d transactions. Page %d of %d.", len(payments), txlist.CurrentPage+1, txlist.MaxPages)
 	return txstr
+}
+
+// formatPaymentTime renders an LNbits payment time. LNbits (pydantic 2) sends
+// UTC as "...Z"; offsets like "+00:00" and offset-less times (taken as UTC)
+// are accepted too. Unparseable input is shown as-is instead of as 1970.
+func formatPaymentTime(s string) string {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format("2 Jan 06 15:04")
+		}
+	}
+	return s
 }
 
 var (
