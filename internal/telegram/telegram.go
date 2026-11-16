@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -77,7 +78,20 @@ func (bot *TipBot) editOrSend(statusMsg tb.Editable, to tb.Recipient, what inter
 	}
 }
 
+// isNilEditable reports whether e is nil or a typed nil pointer. trySend*
+// returns a nil *tb.Message when Telegram refuses a send, and callers keep it.
+func isNilEditable(e tb.Editable) bool {
+	if e == nil {
+		return true
+	}
+	v := reflect.ValueOf(e)
+	return v.Kind() == reflect.Ptr && v.IsNil()
+}
+
 func (bot TipBot) tryEditMessage(to tb.Editable, what interface{}, options ...interface{}) (msg *tb.Message, err error) {
+	if isNilEditable(to) {
+		return nil, fmt.Errorf("no message to edit")
+	}
 	// get a sig for the rate limiter
 	sig, chat := to.MessageSig()
 	if chat != 0 {
@@ -95,7 +109,7 @@ func (bot TipBot) tryEditMessage(to tb.Editable, what interface{}, options ...in
 }
 
 func (bot TipBot) tryDeleteMessage(msg tb.Editable) {
-	if !allowedToPerformAction(bot, msg, isAdminAndCanDelete) {
+	if isNilEditable(msg) || !allowedToPerformAction(bot, msg, isAdminAndCanDelete) {
 		return
 	}
 	rate.CheckLimit(msg)
@@ -114,7 +128,7 @@ func allowedToPerformAction(bot TipBot, editable tb.Editable, action func(member
 	switch editable.(type) {
 	case *tb.Message:
 		message := editable.(*tb.Message)
-		if message.Sender.ID == bot.Telegram.Me.ID {
+		if message.Sender != nil && message.Sender.ID == bot.Telegram.Me.ID {
 			break
 		}
 		chat := message.Chat
