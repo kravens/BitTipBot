@@ -140,7 +140,8 @@ type Wallet struct {
 
 type Payment struct {
 	CheckingID    string      `json:"checking_id"`
-	Pending       bool        `json:"pending"`
+	Pending       bool        `json:"pending"` // LNbits before v1
+	Status        string      `json:"status"`  // LNbits v1: "pending", "success" or "failed"
 	Amount        int64       `json:"amount"`
 	Fee           int64       `json:"fee"`
 	Memo          string      `json:"memo"`

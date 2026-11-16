@@ -41,7 +41,7 @@ func (txlist *TransactionsList) printTransactions(ctx intercept.Context) string 
 	}
 	for i := start; i <= end; i++ {
 		p := payments[i]
-		if p.Pending {
+		if p.Pending || p.Status == "pending" {
 			txstr += "🔄"
 		} else {
 			if p.Amount < 0 {
