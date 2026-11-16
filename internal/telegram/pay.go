@@ -257,7 +257,11 @@ func (bot *TipBot) paySucceeded(msg *tb.Message, user *lnbits.User, payData *Pay
 	}
 
 	// display LNURL success action if present
+	// nil when the LNURL service sent no success action
 	sa := payData.SuccessAction
+	if sa == nil {
+		sa = &lnurl.SuccessAction{}
+	}
 	if sa.Tag == "message" && len(sa.Message) > 0 {
 		bot.trySendMessage(user.Telegram, fmt.Sprintf("✉️: `%s`", sa.Message))
 	} else if sa.Tag == "url" && len(sa.URL) > 0 {
