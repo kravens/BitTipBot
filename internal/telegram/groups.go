@@ -178,8 +178,9 @@ func (bot TipBot) groupRequestJoinHandler(ctx intercept.Context) (intercept.Cont
 		return ctx, fmt.Errorf("group not found")
 	}
 
-	// create tickets
-	id := fmt.Sprintf("ticket:%d", group.ID)
+	// one ticket per group and payer, so another user's /join cannot replace
+	// the payer of a pending ticket
+	id := fmt.Sprintf("ticket:%d:%d", group.ID, user.Telegram.ID)
 	invoiceEvent := &InvoiceEvent{
 		Base:         storage.New(storage.ID(id)),
 		User:         group.Ticket.Creator,
