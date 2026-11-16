@@ -1,6 +1,7 @@
 package lnbits
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -162,7 +163,52 @@ func (c Client) Payment(w Wallet, payment_hash string) (payment LNbitsPayment, e
 	return
 }
 
-// Pay pays a given invoice with funds from the wallet.
+// ErrPaymentPending means LNbits has not settled or failed the payment yet.
+// The amount stays reserved in the wallet until it does.
+var ErrPaymentPending = errors.New("payment is still pending")
+
+// ErrPaymentFailed means the payment failed after LNbits first reported it as
+// pending.
+var ErrPaymentFailed = errors.New("payment failed")
+
+// PayWait is how long Pay keeps asking LNbits about a payment it reported as
+// pending. LNbits answers after 5 s by default while LND keeps trying routes
+// for 30 s, so this has to outlast LND.
+var PayWait = 45 * time.Second
+
+// awaitPayment calls check every interval until the payment is paid (nil) or
+// failed (ErrPaymentFailed). After timeout it returns ErrPaymentPending.
+// Errors of check are retried: the payment may still go through.
+func awaitPayment(check func() (LNbitsPayment, error), timeout, interval time.Duration) error {
+	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); {
+		time.Sleep(interval)
+		p, err := check()
+		if err != nil {
+			continue
+		}
+		if p.Paid {
+			return nil
+		}
+		if p.Status == "failed" || p.Details.Status == "failed" {
+			return ErrPaymentFailed
+		}
+	}
+	return ErrPaymentPending
+}
+
+// AwaitPayment waits for an outgoing payment of w to settle, see awaitPayment.
+// Every check also makes LNbits ask its funding source, which releases the
+// reserved amount of a failed payment right away instead of at the next run
+// of its background task.
+func (c Client) AwaitPayment(w Wallet, paymentHash string, timeout, interval time.Duration) error {
+	return awaitPayment(func() (LNbitsPayment, error) { return c.Payment(w, paymentHash) }, timeout, interval)
+}
+
+// Pay pays a given invoice with funds from the wallet. LNbits v1 replies
+// "pending" when its funding source takes longer than a few seconds; Pay then
+// waits up to PayWait for the result. It returns ErrPaymentFailed when the
+// payment failed, and the invoice together with ErrPaymentPending when it is
+// still undecided.
 func (w Wallet) Pay(params PaymentParams, c *Client) (wtx Invoice, err error) {
 	// custom header with admin key
 	adminHeader := req.Header{
@@ -185,5 +231,8 @@ func (w Wallet) Pay(params PaymentParams, c *Client) (wtx Invoice, err error) {
 	}
 
 	err = resp.ToJSON(&wtx)
+	if err == nil && wtx.Status == "pending" {
+		err = c.AwaitPayment(w, wtx.PaymentHash, PayWait, 2*time.Second)
+	}
 	return
 }

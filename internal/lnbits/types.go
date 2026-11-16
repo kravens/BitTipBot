@@ -157,6 +157,7 @@ type Payment struct {
 
 type LNbitsPayment struct {
 	Paid     bool    `json:"paid"`
+	Status   string  `json:"status"` // LNbits v1: "pending", "success" or "failed"
 	Preimage string  `json:"preimage"`
 	Details  Payment `json:"details,omitempty"`
 }
@@ -166,6 +167,7 @@ type Payments []Payment
 type Invoice struct {
 	PaymentHash    string `json:"payment_hash"`
 	PaymentRequest string `json:"bolt11"` // LNbits v1 returns bolt11, not payment_request
+	Status         string `json:"status"` // LNbits v1: "pending", "success" or "failed"
 }
 
 // from fiatjaf/lnurl-go

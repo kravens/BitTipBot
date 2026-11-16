@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
 
@@ -211,52 +212,66 @@ func (bot *TipBot) confirmPayHandler(ctx intercept.Context) (intercept.Context, 
 	log.Infof("[/pay] Attempting %s's invoice %s (%d sat)", userStr, payData.ID, payData.Amount)
 	// pay invoice
 	invoice, err := user.Wallet.Pay(lnbits.PaymentParams{Out: true, Bolt11: payData.Invoice}, bot.Client)
-	if err != nil {
-		errmsg := fmt.Sprintf("[/pay] Could not pay invoice of %s: %s", userStr, err)
-		err = fmt.Errorf(i18n.Translate(payData.LanguageCode, "invoiceUndefinedErrorMessage"))
-		bot.tryEditMessage(ctx.Message(), fmt.Sprintf(i18n.Translate(payData.LanguageCode, "invoicePaymentFailedMessage"), err.Error()), &tb.ReplyMarkup{})
-		// verbose error message, turned off for now
-		// if len(err.Error()) == 0 {
-		// 	err = fmt.Errorf(i18n.Translate(payData.LanguageCode, "invoiceUndefinedErrorMessage"))
-		// }
-		// bot.tryEditMessage(c.Message, fmt.Sprintf(i18n.Translate(payData.LanguageCode, "invoicePaymentFailedMessage"), str.MarkdownEscape(err.Error())), &tb.ReplyMarkup{})
-		log.Errorln(errmsg)
+	if err == lnbits.ErrPaymentPending {
+		// neither paid nor failed yet: say so and report the result later
+		log.Warnf("[/pay] Invoice %s of %s is still pending", payData.ID, userStr)
+		payData.Hash = invoice.PaymentHash
+		bot.tryEditMessage(ctx.Message(), i18n.Translate(payData.LanguageCode, "invoicePendingMessage"), &tb.ReplyMarkup{})
+		go bot.reportPendingPayment(ctx.Message(), user, payData)
 		return ctx, err
 	}
-	payData.Hash = invoice.PaymentHash
-
-	// do balance check for keyboard update
-	_, err = bot.GetUserBalance(user)
 	if err != nil {
-		errmsg := fmt.Sprintf("could not get balance of user %s", userStr)
-		log.Errorln(errmsg)
+		log.Errorf("[/pay] Could not pay invoice of %s: %s", userStr, err)
+		return ctx, bot.payFailed(ctx.Message(), payData)
+	}
+	payData.Hash = invoice.PaymentHash
+	bot.paySucceeded(ctx.Message(), user, payData)
+	return ctx, nil
+}
+
+// payFailed tells the user that the payment of payData failed, in msg.
+func (bot *TipBot) payFailed(msg *tb.Message, payData *PayData) error {
+	err := fmt.Errorf(i18n.Translate(payData.LanguageCode, "invoiceUndefinedErrorMessage"))
+	bot.tryEditMessage(msg, fmt.Sprintf(i18n.Translate(payData.LanguageCode, "invoicePaymentFailedMessage"), err.Error()), &tb.ReplyMarkup{})
+	return err
+}
+
+// paySucceeded tells the user that the payment of payData was sent, replacing
+// msg (the confirmation message), and shows the LNURL success action.
+func (bot *TipBot) paySucceeded(msg *tb.Message, user *lnbits.User, payData *PayData) {
+	userStr := GetUserStr(user.Telegram)
+	// do balance check for keyboard update
+	if _, err := bot.GetUserBalance(user); err != nil {
+		log.Errorf("could not get balance of user %s", userStr)
 	}
 
-	if ctx.Message().Private() {
+	if msg.Private() {
 		// if the command was invoked in private chat
-		// the edit below was cool, but we need to pop up the keyboard again
-		// bot.tryEditMessage(c.Message, i18n.Translate(payData.LanguageCode, "invoicePaidMessage"), &tb.ReplyMarkup{})
-		bot.tryDeleteMessage(ctx.Message())
-		bot.trySendMessage(ctx.Sender(), i18n.Translate(payData.LanguageCode, "invoicePaidMessage"))
+		// delete and send instead of edit, so the keyboard pops up again
+		bot.tryDeleteMessage(msg)
+		bot.trySendMessage(user.Telegram, i18n.Translate(payData.LanguageCode, "invoicePaidMessage"))
 	} else {
 		// if the command was invoked in group chat
-		bot.trySendMessage(ctx.Sender(), i18n.Translate(payData.LanguageCode, "invoicePaidMessage"))
-		bot.tryEditMessage(ctx.Message(), fmt.Sprintf(i18n.Translate(payData.LanguageCode, "invoicePublicPaidMessage"), userStr), &tb.ReplyMarkup{})
+		bot.trySendMessage(user.Telegram, i18n.Translate(payData.LanguageCode, "invoicePaidMessage"))
+		bot.tryEditMessage(msg, fmt.Sprintf(i18n.Translate(payData.LanguageCode, "invoicePublicPaidMessage"), userStr), &tb.ReplyMarkup{})
 	}
 
 	// display LNURL success action if present
+	// nil when the LNURL service sent no success action
 	sa := payData.SuccessAction
+	if sa == nil {
+		sa = &lnurl.SuccessAction{}
+	}
 	if sa.Tag == "message" && len(sa.Message) > 0 {
-		bot.trySendMessage(ctx.Sender(), fmt.Sprintf("✉️: `%s`", sa.Message))
+		bot.trySendMessage(user.Telegram, fmt.Sprintf("✉️: `%s`", sa.Message))
 	} else if sa.Tag == "url" && len(sa.URL) > 0 {
-		bot.trySendMessage(ctx.Sender(), fmt.Sprintf("🔗: %s", str.MarkdownEscape(sa.URL)), tb.NoPreview)
+		bot.trySendMessage(user.Telegram, fmt.Sprintf("🔗: %s", str.MarkdownEscape(sa.URL)), tb.NoPreview)
 		if len(sa.Description) > 0 {
-			bot.trySendMessage(ctx.Sender(), fmt.Sprintf("✉️: %s", sa.Description))
+			bot.trySendMessage(user.Telegram, fmt.Sprintf("✉️: %s", sa.Description))
 		}
 	}
 
 	log.Infof("[⚡️ pay] User %s paid invoice %s (%d sat)", userStr, payData.ID, payData.Amount)
-	return ctx, nil
 }
 
 // cancelPaymentHandler invoked when user clicked cancel on payment confirmation
@@ -284,4 +299,23 @@ func (bot *TipBot) cancelPaymentHandler(ctx intercept.Context) (intercept.Contex
 	// bot.tryEditMessage(c.Message, i18n.Translate(payData.LanguageCode, "paymentCancelledMessage"), &tb.ReplyMarkup{})
 	return ctx, payData.Inactivate(payData, bot.Bunt)
 
+}
+
+// reportPendingPayment waits for a payment that Pay left as pending and
+// finishes msg (the confirmation message, now saying "in progress") the same
+// way confirmPayHandler would have. The checks also make LNbits release the
+// reserved amount as soon as the payment has failed.
+// ponytail: in-memory only, a bot restart drops the watch; LNbits then settles
+// the payment in its own background task and the user sees it in /transactions.
+func (bot *TipBot) reportPendingPayment(msg *tb.Message, user *lnbits.User, payData *PayData) {
+	err := bot.Client.AwaitPayment(user.Wallet, payData.Hash, 24*time.Hour, time.Minute)
+	switch {
+	case err == nil:
+		bot.paySucceeded(msg, user, payData)
+	case err == lnbits.ErrPaymentFailed:
+		log.Errorf("[/pay] Pending invoice %s of %s failed", payData.ID, GetUserStr(user.Telegram))
+		bot.payFailed(msg, payData)
+	default:
+		log.Warnf("[/pay] Payment %s of %s is still pending after a day", payData.Hash, GetUserStr(user.Telegram))
+	}
 }

@@ -484,7 +484,9 @@ func (bot *TipBot) executeCashuMint(ctx intercept.Context, user *lnbits.User, se
 		Out:    true,
 		Bolt11: quote.Request,
 	}, bot.Client)
-	if err != nil {
+	// A pending payment may still go through: keep the record and let the
+	// quote check below decide.
+	if err != nil && err != lnbits.ErrPaymentPending {
 		// Nothing was paid — drop the record so it doesn't show as recoverable.
 		log.Errorf("[cashu mint] Payment to mint failed: %s", err.Error())
 		_ = record.Delete(record, bot.Bunt)
@@ -492,13 +494,18 @@ func (bot *TipBot) executeCashuMint(ctx intercept.Context, user *lnbits.User, se
 		return ctx, err
 	}
 
-	log.Infof("[cashu mint] Paid mint invoice for quote %s", quote.Quote)
+	payErr := err
+	log.Infof("[cashu mint] Paid mint invoice for quote %s (err=%v)", quote.Quote, payErr)
 
 	// Step 3: Wait until the MINT sees the payment as settled. Our Pay
 	// returning is not enough — minting too early fails with "quote not paid".
 	if paid, err := bot.CashuClient.WaitQuotePaid(quote.Quote, 30*time.Second); !paid {
 		log.Warnf("[cashu mint] quote %s not settled after 30s (err=%v)", quote.Quote, err)
-		bot.tryEditMessage(statusMsg, "🥜 Payment sent, but the mint hasn't confirmed it yet. Your token is saved — run /cashu recover in a moment to finish it.")
+		if payErr == lnbits.ErrPaymentPending {
+			bot.tryEditMessage(statusMsg, "🥜 Your payment to the mint is still in progress. Your token is saved — run /cashu recover later to finish it. If the payment fails, the amount goes back to your wallet.")
+		} else {
+			bot.tryEditMessage(statusMsg, "🥜 Payment sent, but the mint hasn't confirmed it yet. Your token is saved — run /cashu recover in a moment to finish it.")
+		}
 		return ctx, fmt.Errorf("mint quote not settled in time")
 	}
 
