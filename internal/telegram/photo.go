@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/jpeg"
 	_ "image/png" // registers the PNG decoder for image.Decode (QR files)
+	"io"
 	"strings"
 
 	"github.com/LightningTipBot/LightningTipBot/internal"
@@ -80,8 +81,8 @@ func (bot *TipBot) photoHandler(ctx intercept.Context) (intercept.Context, error
 		log.Errorf("[photoHandler] getfile error: %v\n", err.Error())
 		return ctx, err
 	}
-	// decode to jpeg image
-	img, err := jpeg.Decode(reader)
+	defer reader.Close()
+	img, err := decodeImageLimited(reader)
 	if err != nil {
 		log.Errorf("[photoHandler] image.Decode error: %v\n", err.Error())
 		return ctx, err
@@ -112,8 +113,9 @@ func (bot *TipBot) documentHandler(ctx intercept.Context) (intercept.Context, er
 		log.Errorf("[documentHandler] getfile error: %v\n", err.Error())
 		return ctx, err
 	}
+	defer reader.Close()
 	// image.Decode picks the right decoder (png/jpeg) from the data
-	img, _, err := image.Decode(reader)
+	img, err := decodeImageLimited(reader)
 	if err != nil {
 		log.Errorf("[documentHandler] image.Decode error: %v\n", err.Error())
 		return ctx, err
@@ -121,12 +123,49 @@ func (bot *TipBot) documentHandler(ctx intercept.Context) (intercept.Context, er
 	return bot.routeQrImage(ctx, img)
 }
 
+const (
+	// Telegram bots cannot download files over 20 MB anyway.
+	maxImageFileBytes = 20 << 20
+	// 50 megapixels covers phone cameras; a small PNG can claim far more and
+	// would make the decoder allocate gigabytes.
+	maxImagePixels = 50_000_000
+)
+
+// imageDecodeSlots bounds how many images are decoded (and QR-scanned) at once,
+// so parallel uploads cannot multiply the memory each one needs.
+var imageDecodeSlots = make(chan struct{}, 2)
+
+// decodeImageLimited decodes an image from r after checking the file size and
+// the dimensions in its header.
+func decodeImageLimited(r io.Reader) (image.Image, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxImageFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxImageFileBytes {
+		return nil, fmt.Errorf("image file larger than %d bytes", maxImageFileBytes)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxImagePixels {
+		return nil, fmt.Errorf("image of %dx%d pixels refused", cfg.Width, cfg.Height)
+	}
+	imageDecodeSlots <- struct{}{}
+	defer func() { <-imageDecodeSlots }()
+	img, _, err := image.Decode(bytes.NewReader(data))
+	return img, err
+}
+
 // routeQrImage decodes a QR from img and dispatches its payload (invoice,
 // LNURL, or cashu token).
 func (bot *TipBot) routeQrImage(ctx intercept.Context, img image.Image) (intercept.Context, error) {
 	m := ctx.Message()
 	user := LoadUser(ctx)
+	imageDecodeSlots <- struct{}{}
 	data, err := TryRecognizeQrCode(img)
+	<-imageDecodeSlots
 	if err != nil {
 		log.Errorf("[photoHandler] tryRecognizeQrCodes error: %v\n", err.Error())
 		bot.trySendMessage(m.Sender, Translate(ctx, "photoQrNotRecognizedMessage"))
