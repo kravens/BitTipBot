@@ -24,7 +24,8 @@ func FindUser(database *gorm.DB, username string) (*lnbits.User, *gorm.DB) {
 		tx = database.Where("uuid = ?", username).First(user)
 	} else {
 		// assume it's a string @username
-		tx = database.Where("telegram_username = ? COLLATE NOCASE", username).First(user)
+		// see GetUserByTelegramUsername for the order
+		tx = database.Where("telegram_username = ? COLLATE NOCASE", username).Order("updated_at desc").First(user)
 	}
 	return user, tx
 }

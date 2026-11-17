@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/database"
@@ -147,13 +148,41 @@ func AutoMigration() *Databases {
 	}
 }
 
+// releaseUsernameHeldByOthers clears u's username on every other user row.
+// Usernames change hands on Telegram, and a row keeps its old username until
+// that user talks to the bot again, so /send @name and name@<bot domain>
+// could pay the previous holder. u must be the live sender of an update, not
+// a stored copy: stored copies carry usernames that may be outdated.
+func (bot TipBot) releaseUsernameHeldByOthers(user *lnbits.User, u *tb.User) {
+	if u == nil || u.Username == "" || isPlaceholderSender(u) || user.Name == "" {
+		return
+	}
+	key := fmt.Sprintf("username-holder:%s", strings.ToLower(u.Username))
+	if holder, err := bot.Cache.Get(key); err == nil && holder == user.Name {
+		return
+	}
+	tx := bot.DB.Users.Model(&lnbits.User{}).
+		Where("telegram_username = ? COLLATE NOCASE AND name <> ?", u.Username, user.Name).
+		Update("telegram_username", "")
+	if tx.Error != nil {
+		log.Errorf("[releaseUsernameHeldByOthers] %v", tx.Error)
+		return
+	}
+	if tx.RowsAffected > 0 {
+		log.Infof("[releaseUsernameHeldByOthers] @%s now belongs to %s, cleared it on %d other user(s)", u.Username, user.Name, tx.RowsAffected)
+	}
+	bot.Cache.Set(key, user.Name, &store.Options{Expiration: 10 * time.Minute})
+}
+
 func GetUserByTelegramUsername(toUserStrWithoutAt string, bot TipBot) (*lnbits.User, error) {
 	toUserDb := &lnbits.User{}
 	// return error if username is too long
 	if len(toUserStrWithoutAt) > 100 {
 		return nil, fmt.Errorf("[GetUserByTelegramUsername] Telegram username is too long: %s..", toUserStrWithoutAt[:100])
 	}
-	tx := bot.DB.Users.Where("telegram_username = ? COLLATE NOCASE", toUserStrWithoutAt).First(toUserDb)
+	// with several rows (holders that have not been seen since the username
+	// moved), the most recently updated row is the likeliest current holder
+	tx := bot.DB.Users.Where("telegram_username = ? COLLATE NOCASE", toUserStrWithoutAt).Order("updated_at desc").First(toUserDb)
 	if tx.Error != nil || toUserDb.Wallet.ID == "" {
 		err := tx.Error
 		if toUserDb.Wallet.ID == "" {

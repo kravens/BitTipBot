@@ -112,6 +112,9 @@ func (bot TipBot) requireUserInterceptor(ctx intercept.Context) (intercept.Conte
 	u := ctx.Sender()
 	if u != nil {
 		user, err = GetUser(u, bot)
+		if err == nil && user != nil {
+			bot.releaseUsernameHeldByOthers(user, u)
+		}
 		// do not respond to banned users
 		if bot.UserIsBanned(user) {
 			ctx.Context = context.WithValue(ctx, "banned", true)
