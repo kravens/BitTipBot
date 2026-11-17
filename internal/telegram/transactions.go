@@ -109,6 +109,8 @@ var (
 )
 
 func (bot *TipBot) makeTransactionsKeyboard(ctx intercept.Context, txlist TransactionsList) *tb.ReplyMarkup {
+	// fresh per message, see shopKeyboard
+	transactionsMeno := &tb.ReplyMarkup{ResizeKeyboard: true}
 	leftTransactionsButton := transactionsMeno.Data("←", "left_transactions", txlist.ID)
 	rightTransactionsButton := transactionsMeno.Data("→", "right_transactions", txlist.ID)
 

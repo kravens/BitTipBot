@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
@@ -15,6 +16,8 @@ import (
 )
 
 func (bot TipBot) shopsMainMenu(ctx intercept.Context, shops *Shops) *tb.ReplyMarkup {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	browseShopButton := shopKeyboard.Data("🛍 Browse shops", "shops_browse", shops.ID)
 	shopNewShopButton := shopKeyboard.Data("✅ New Shop", "shops_newshop", shops.ID)
 	shopSettingsButton := shopKeyboard.Data("⚙️ Settings", "shops_settings", shops.ID)
@@ -34,6 +37,8 @@ func (bot TipBot) shopsMainMenu(ctx intercept.Context, shops *Shops) *tb.ReplyMa
 }
 
 func (bot TipBot) shopsSettingsMenu(ctx intercept.Context, shops *Shops) *tb.ReplyMarkup {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	shopShopsButton := shopKeyboard.Data("⬅️ Back", "shops_shops", shops.ID)
 	shopLinkShopButton := shopKeyboard.Data("🔗 Shop links", "shops_linkshop", shops.ID)
 	shopRenameShopButton := shopKeyboard.Data("⌨️ Rename a shop", "shops_renameshop", shops.ID)
@@ -65,11 +70,13 @@ func (bot TipBot) shopsSettingsMenu(ctx intercept.Context, shops *Shops) *tb.Rep
 
 // shopItemSettingsMenu builds the buttons of the item settings
 func (bot TipBot) shopItemSettingsMenu(ctx intercept.Context, shop *Shop, item *ShopItem) *tb.ReplyMarkup {
-	shopItemPriceButton = shopKeyboard.Data("💯 Set price", "shop_itemprice", item.ID)
-	shopItemDeleteButton = shopKeyboard.Data("🚫 Delete item", "shop_itemdelete", item.ID)
-	shopItemTitleButton = shopKeyboard.Data("⌨️ Set title", "shop_itemtitle", item.ID)
-	shopItemAddFileButton = shopKeyboard.Data("💾 Add files ...", "shop_itemaddfile", item.ID)
-	shopItemSettingsBackButton = shopKeyboard.Data("⬅️ Back", "shop_itemsettingsback", item.ID)
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
+	shopItemPriceButton := shopKeyboard.Data("💯 Set price", "shop_itemprice", item.ID)
+	shopItemDeleteButton := shopKeyboard.Data("🚫 Delete item", "shop_itemdelete", item.ID)
+	shopItemTitleButton := shopKeyboard.Data("⌨️ Set title", "shop_itemtitle", item.ID)
+	shopItemAddFileButton := shopKeyboard.Data("💾 Add files ...", "shop_itemaddfile", item.ID)
+	shopItemSettingsBackButton := shopKeyboard.Data("⬅️ Back", "shop_itemsettingsback", item.ID)
 	user := LoadUser(ctx)
 	buttons := []tb.Row{}
 	if user.Telegram.ID == shop.Owner.Telegram.ID {
@@ -85,8 +92,11 @@ func (bot TipBot) shopItemSettingsMenu(ctx intercept.Context, shop *Shop, item *
 
 // shopItemConfirmBuyMenu builds the buttons to confirm a purchase
 func (bot TipBot) shopItemConfirmBuyMenu(ctx intercept.Context, shop *Shop, item *ShopItem) *tb.ReplyMarkup {
-	shopItemBuyButton = shopKeyboard.Data(fmt.Sprintf("💸 Pay %d sat", item.Price), "shop_itembuy", item.ID)
-	shopItemCancelBuyButton = shopKeyboard.Data("⬅️ Back", "shop_itemcancelbuy", item.ID)
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
+	// the price shown goes into the button, so the buyer pays exactly that
+	shopItemBuyButton := shopKeyboard.Data(fmt.Sprintf("💸 Pay %d sat", item.Price), "shop_itembuy", item.ID, strconv.FormatInt(item.Price, 10))
+	shopItemCancelBuyButton := shopKeyboard.Data("⬅️ Back", "shop_itemcancelbuy", item.ID)
 	buttons := []tb.Row{}
 	buttons = append(buttons, shopKeyboard.Row(shopItemBuyButton))
 	buttons = append(buttons, shopKeyboard.Row(shopItemCancelBuyButton))
@@ -98,6 +108,8 @@ func (bot TipBot) shopItemConfirmBuyMenu(ctx intercept.Context, shop *Shop, item
 
 // shopMenu builds the buttons in the item browser
 func (bot TipBot) shopMenu(ctx intercept.Context, shop *Shop, item *ShopItem) *tb.ReplyMarkup {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	user := LoadUser(ctx)
 	shopView, err := bot.getUserShopview(ctx, user)
 	if err != nil {
@@ -105,15 +117,15 @@ func (bot TipBot) shopMenu(ctx intercept.Context, shop *Shop, item *ShopItem) *t
 	}
 
 	shopShopsButton := shopKeyboard.Data("⬅️ Back", "shops_shops", shop.ShopsID)
-	shopAddItemButton = shopKeyboard.Data("✅ New item", "shop_additem", shop.ID)
-	shopItemSettingsButton = shopKeyboard.Data("⚙️ Settings", "shop_itemsettings", item.ID)
-	shopNextitemButton = shopKeyboard.Data(">", "shop_nextitem", shop.ID)
-	shopPrevitemButton = shopKeyboard.Data("<", "shop_previtem", shop.ID)
+	shopAddItemButton := shopKeyboard.Data("✅ New item", "shop_additem", shop.ID)
+	shopItemSettingsButton := shopKeyboard.Data("⚙️ Settings", "shop_itemsettings", item.ID)
+	shopNextitemButton := shopKeyboard.Data(">", "shop_nextitem", shop.ID)
+	shopPrevitemButton := shopKeyboard.Data("<", "shop_previtem", shop.ID)
 	buyButtonText := "📩 Get"
 	if item.Price > 0 {
 		buyButtonText = fmt.Sprintf("Buy (%d sat)", item.Price)
 	}
-	shopBuyitemButton = shopKeyboard.Data(buyButtonText, "shop_buyitem", item.ID)
+	shopBuyitemButton := shopKeyboard.Data(buyButtonText, "shop_buyitem", item.ID)
 
 	buttons := []tb.Row{}
 	if user.Telegram.ID == shop.Owner.Telegram.ID {

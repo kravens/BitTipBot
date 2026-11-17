@@ -4,19 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/network"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/errors"
 	"github.com/LightningTipBot/LightningTipBot/internal/i18n"
+	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
 	"github.com/LightningTipBot/LightningTipBot/internal/runtime"
 	"github.com/LightningTipBot/LightningTipBot/internal/runtime/mutex"
 	"github.com/LightningTipBot/LightningTipBot/internal/storage"
-	"github.com/imroc/req"
-
-	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
 
 	lnurl "github.com/fiatjaf/go-lnurl"
 	log "github.com/sirupsen/logrus"
@@ -41,6 +38,8 @@ type LnurlAuthState struct {
 // lnurlPayHandler1 is invoked when the first lnurl response was a lnurlpay response
 // at this point, the user hans't necessarily entered an amount yet
 func (bot *TipBot) lnurlAuthHandler(ctx context.Context, m *tb.Message, authParams *LnurlAuthState) (context.Context, error) {
+	// fresh per message, see shopKeyboard
+	paymentConfirmationMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
 	user := LoadUser(ctx)
 	if user.Wallet.ID == "" {
 		return ctx, errors.Create(errors.UserNoWalletError)
@@ -52,8 +51,8 @@ func (bot *TipBot) lnurlAuthHandler(ctx context.Context, m *tb.Message, authPara
 	authParams.LanguageCode = ctx.Value("publicLanguageCode").(string)
 
 	// // // create inline buttons
-	btnAuth = paymentConfirmationMenu.Data(Translate(ctx, "loginButtonMessage"), "confirm_login", id)
-	btnCancelAuth = paymentConfirmationMenu.Data(Translate(ctx, "cancelButtonMessage"), "cancel_login", id)
+	btnAuth := paymentConfirmationMenu.Data(Translate(ctx, "loginButtonMessage"), "confirm_login", id)
+	btnCancelAuth := paymentConfirmationMenu.Data(Translate(ctx, "cancelButtonMessage"), "cancel_login", id)
 
 	paymentConfirmationMenu.Inline(
 		paymentConfirmationMenu.Row(
@@ -116,13 +115,21 @@ func (bot *TipBot) confirmLnurlAuthHandler(ctx intercept.Context) (intercept.Con
 	if err != nil {
 		return ctx, err
 	}
-	r := req.New()
-	r.SetClient(client)
-	res, err := r.Get(p.CallbackURL.String(), url.Values{"sig": {sig}, "key": {key}})
+	callback := *p.CallbackURL
+	q := callback.Query()
+	q.Set("sig", sig)
+	q.Set("key", key)
+	callback.RawQuery = q.Encode()
+	res, err := client.Get(callback.String())
 	if err != nil {
 		return ctx, err
 	}
-	err = json.Unmarshal(res.Bytes(), &sentsigres)
+	defer res.Body.Close()
+	body, err := network.ReadBody(res.Body)
+	if err != nil {
+		return ctx, err
+	}
+	err = json.Unmarshal(body, &sentsigres)
 	if err != nil {
 		return ctx, err
 	}
