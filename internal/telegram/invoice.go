@@ -335,15 +335,22 @@ func (bot *TipBot) lnurlReceiveEvent(event Event) {
 			return
 		}
 
+		// The payer name comes unauthenticated from the payer and is shown in a
+		// code span, where Markdown escapes do not work: drop backticks so it
+		// cannot close the span and inject links or formatting.
+		from := strings.ReplaceAll(tx.From, "`", "'")
+		if r := []rune(from); len(r) > 100 {
+			from = string(r[:100]) + "…"
+		}
 		// notify user with LNURL comment and sender Information
 		if len(tx.Comment) > 0 {
 			if len(tx.From) == 0 {
 				bot.trySendMessage(tx.User.Telegram, fmt.Sprintf("✉️ %s", str.MarkdownEscape(tx.Comment)), tb.NoPreview)
 			} else {
-				bot.trySendMessage(tx.User.Telegram, fmt.Sprintf("✉️ From `%s`: %s", tx.From, str.MarkdownEscape(tx.Comment)), tb.NoPreview)
+				bot.trySendMessage(tx.User.Telegram, fmt.Sprintf("✉️ From `%s`: %s", from, str.MarkdownEscape(tx.Comment)), tb.NoPreview)
 			}
 		} else if len(tx.From) > 0 {
-			bot.trySendMessage(tx.User.Telegram, fmt.Sprintf("From `%s`", str.MarkdownEscape(tx.From)), tb.NoPreview)
+			bot.trySendMessage(tx.User.Telegram, fmt.Sprintf("From `%s`", from), tb.NoPreview)
 		}
 		// send out NIP57 zap receipt
 		if len(tx.Nip57Receipt.Sig) > 0 {
