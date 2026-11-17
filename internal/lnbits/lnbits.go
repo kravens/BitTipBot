@@ -79,7 +79,11 @@ func (c *Client) InvoiceForWallet(walletInkey string, params InvoiceParams) (Inv
 	if err == nil && params.Webhook != "" && invoicepoll.PaidHook != nil {
 		// the webhook may never arrive, so also poll for the payment
 		hash := result.PaymentHash
-		go invoicepoll.Watch(hash, invoicepoll.Deadline(result.PaymentRequest), 2*time.Second, func() (invoicepoll.Status, error) {
+		watch := invoicepoll.Watch
+		if params.Public {
+			watch = invoicepoll.WatchPublic
+		}
+		go watch(hash, invoicepoll.Deadline(result.PaymentRequest), 2*time.Second, func() (invoicepoll.Status, error) {
 			p, err := c.Payment(Wallet{Inkey: walletInkey}, hash)
 			return invoicepoll.Status{
 				Paid:       p.Paid && p.Details.PaymentHash == hash && p.Details.Amount > 0,
