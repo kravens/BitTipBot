@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -53,11 +54,27 @@ func directTransport() *http.Transport {
 // a lightning address on them must keep working.
 func init() {
 	if u := internal.Configuration.Bot.LNURLHostUrl; u != nil {
-		netguard.Trust(u.Hostname())
+		netguard.Trust(hostPort(u))
 	}
 	if u, err := url.Parse(internal.Configuration.Lnbits.Url); err == nil {
-		netguard.Trust(u.Hostname())
+		netguard.Trust(hostPort(u))
 	}
+}
+
+// hostPort returns host:port of u, with the scheme's default port.
+func hostPort(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		switch u.Scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return ""
+		}
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }
 
 func GetClient(clientType ClientType) (*http.Client, error) {
@@ -106,4 +123,21 @@ func GetClient(clientType ClientType) (*http.Client, error) {
 	}
 	client.Transport = specialTransport
 	return &client, nil
+}
+
+// MaxResponseBody is the most ReadBody reads. LNURL and node API answers are a
+// few KB; servers chosen by users must not make the bot buffer more, and
+// transparent gzip turns a few hundred KB on the wire into gigabytes.
+const MaxResponseBody = 1 << 20
+
+// ReadBody reads a response body of at most MaxResponseBody bytes.
+func ReadBody(r io.Reader) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, MaxResponseBody+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxResponseBody {
+		return nil, fmt.Errorf("response larger than %d bytes", MaxResponseBody)
+	}
+	return b, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -274,6 +275,12 @@ func (bot *TipBot) shopItemSettingsHandler(ctx intercept.Context) (intercept.Con
 		return ctx, err
 	}
 	shop, err := bot.getShop(ctx, shopView.ShopID)
+	if err != nil {
+		return ctx, err
+	}
+	if shop.Owner.Telegram.ID != c.Sender.ID {
+		return ctx, errors.Create(errors.NotShopOwnerError)
+	}
 	item := shop.Items[shop.ItemIds[shopView.Page]]
 	// sanity check
 	if item.ID != c.Data {
@@ -670,10 +677,16 @@ func (bot *TipBot) shopItemAddItemHandler(ctx intercept.Context) (intercept.Cont
 		log.Errorf("[shopItemAddItemHandler] %s", err.Error())
 		return ctx, err
 	}
+	if shop.Owner.Telegram.ID != c.Sender.ID {
+		return ctx, errors.Create(errors.NotShopOwnerError)
+	}
 
 	itemID := c.Data
 
-	item := shop.Items[itemID]
+	item, ok := shop.Items[itemID]
+	if !ok {
+		return ctx, errors.Create(errors.ItemIdMismatchError)
+	}
 
 	if len(item.FileIDs) >= item.MaxFiles {
 		bot.trySendMessage(c.Sender, fmt.Sprintf("🚫 You can only have %d files in this item.", item.MaxFiles))
@@ -704,9 +717,16 @@ func (bot *TipBot) addItemFileHandler(ctx intercept.Context) (intercept.Context,
 		return ctx, err
 	}
 
+	// the shop is the one the user is viewing, which can be someone else's
+	if shop.Owner.Telegram.ID != m.Sender.ID {
+		return ctx, errors.Create(errors.NotShopOwnerError)
+	}
 	itemID := user.StateData
 
-	item := shop.Items[itemID]
+	item, ok := shop.Items[itemID]
+	if !ok {
+		return ctx, errors.Create(errors.ItemIdMismatchError)
+	}
 	if m.Photo != nil {
 		item.FileIDs = append(item.FileIDs, m.Photo.FileID)
 		item.FileTypes = append(item.FileTypes, "photo")
@@ -836,8 +856,17 @@ func (bot *TipBot) shopConfirmBuyHandler(ctx intercept.Context) (intercept.Conte
 		log.Errorf("[shopConfirmBuyHandler] %s", err.Error())
 		return ctx, err
 	}
-	itemID := c.Data
-	item := shop.Items[itemID]
+	// c.Data is "itemID|price shown on the button"
+	itemID, shownPrice, _ := strings.Cut(c.Data, "|")
+	item, ok := shop.Items[itemID]
+	if !ok {
+		return ctx, errors.Create(errors.ItemIdMismatchError)
+	}
+	if shownPrice != strconv.FormatInt(item.Price, 10) {
+		// the seller changed the price after the buyer opened this button
+		ctx.Context = context.WithValue(ctx, "callback_response", "🛍 The price has changed, please open the item again.")
+		return ctx, errors.Create(errors.InvalidAmountError)
+	}
 	if item.Owner.ID != shop.Owner.ID {
 		log.Errorf("[shopConfirmBuyHandler] Owners do not match.")
 		return ctx, errors.Create(errors.NotShopOwnerError)
@@ -899,7 +928,9 @@ func (bot *TipBot) shopSendItemFilesToUser(ctx intercept.Context, toUser *lnbits
 	}
 	item := shop.Items[itemID]
 	// send the cover image
-	bot.sendFileByID(ctx, toUser.Telegram, item.TbPhoto.FileID, "photo")
+	if item.TbPhoto != nil {
+		bot.sendFileByID(ctx, toUser.Telegram, item.TbPhoto.FileID, "photo")
+	}
 	// and all other files
 	for i, fileID := range item.FileIDs {
 		bot.sendFileByID(ctx, toUser.Telegram, fileID, item.FileTypes[i])
@@ -1097,6 +1128,8 @@ func (bot *TipBot) shopsHandler(ctx intercept.Context) (intercept.Context, error
 
 // shopsDeleteShopBrowser is invoked when the user clicks on "delete shops" and makes a list of all shops
 func (bot *TipBot) shopsDeleteShopBrowser(ctx intercept.Context) (intercept.Context, error) {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	c := ctx.Callback()
 	log.Debugf("[shopsDeleteShopBrowser] %s", c.Data)
 	user := LoadUser(ctx)
@@ -1114,13 +1147,15 @@ func (bot *TipBot) shopsDeleteShopBrowser(ctx intercept.Context) (intercept.Cont
 	}
 	shopShopsButton := shopKeyboard.Data("⬅️ Back", "shops_shops", shops.ID)
 
-	shopResetShopAskButton = shopKeyboard.Data("⚠️ Delete all shops", "shops_reset_ask", shops.ID)
+	shopResetShopAskButton := shopKeyboard.Data("⚠️ Delete all shops", "shops_reset_ask", shops.ID)
 	shopKeyboard.Inline(buttonWrapper(append(bot.makseShopSelectionButtons(s, "delete_shop"), shopResetShopAskButton, shopShopsButton), shopKeyboard, 1)...)
 	_, err = bot.tryEditMessage(c.Message, "Which shop do you want to delete?", shopKeyboard)
 	return ctx, err
 }
 
 func (bot *TipBot) shopsAskDeleteAllShopsHandler(ctx intercept.Context) (intercept.Context, error) {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	c := ctx.Callback()
 	log.Debugf("[shopsAskDeleteAllShopsHandler] %s", c.Data)
 	shopResetShopButton := shopKeyboard.Data("⚠️ Delete all shops", "shops_reset", c.Data)
@@ -1137,6 +1172,8 @@ func (bot *TipBot) shopsAskDeleteAllShopsHandler(ctx intercept.Context) (interce
 
 // shopsLinkShopBrowser is invoked when the user clicks on "shop links" and makes a list of all shops
 func (bot *TipBot) shopsLinkShopBrowser(ctx intercept.Context) (intercept.Context, error) {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	c := ctx.Callback()
 	log.Debugf("[shopsLinkShopBrowser] %s", c.Data)
 	user := LoadUser(ctx)
@@ -1172,6 +1209,8 @@ func (bot *TipBot) shopSelectLink(ctx intercept.Context) (intercept.Context, err
 
 // shopsLinkShopBrowser is invoked when the user clicks on "shop links" and makes a list of all shops
 func (bot *TipBot) shopsRenameShopBrowser(ctx intercept.Context) (intercept.Context, error) {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	c := ctx.Callback()
 	log.Debugf("[shopsRenameShopBrowser] %s", c.Data)
 	user := LoadUser(ctx)
@@ -1321,7 +1360,13 @@ func (bot *TipBot) shopSelect(ctx intercept.Context) (intercept.Context, error) 
 func (bot *TipBot) shopSelectDelete(ctx intercept.Context) (intercept.Context, error) {
 	c := ctx.Callback()
 	log.Debugf("[shopSelectDelete] %s", c.Data)
-	shop, _ := bot.getShop(ctx, c.Data)
+	shop, err := bot.getShop(ctx, c.Data)
+	if err != nil {
+		return ctx, err
+	}
+	if shop.Owner.Telegram.ID != c.Sender.ID {
+		return ctx, errors.Create(errors.NotShopOwnerError)
+	}
 	user := LoadUser(ctx)
 	shops, err := bot.getUserShops(ctx, user)
 	if err != nil {
@@ -1350,6 +1395,8 @@ func (bot *TipBot) shopSelectDelete(ctx intercept.Context) (intercept.Context, e
 
 // shopsBrowser makes a button list of all shops the user can browse
 func (bot *TipBot) shopsBrowser(ctx intercept.Context) (intercept.Context, error) {
+	// a fresh keyboard per message: a shared one is rebuilt by other users' requests while this one waits in the rate limiter
+	shopKeyboard := &tb.ReplyMarkup{ResizeKeyboard: false}
 	c := ctx.Callback()
 	log.Debugf("[shopsBrowser] %s", c.Data)
 	user := LoadUser(ctx)

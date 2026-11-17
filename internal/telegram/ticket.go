@@ -34,23 +34,65 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 		log.Traceln("[TICKET] I am not an admin of this group")
 		return ctx, fmt.Errorf("no admin rights")
 	}
-	user := LoadUser(ctx)
+	// The ticket is for the members who joined. When someone adds members,
+	// the sender of the update is the one who added them. Telegram sends all
+	// members added at once in one update, and telebot runs this handler once
+	// per member with UserJoined pointing at a shared loop variable, so read
+	// the whole list here instead. The lock interceptor serializes the runs
+	// for one update (same sender) and the existence check skips members that
+	// an earlier run already charged.
+	joiners := []*tb.User{}
+	if m := ctx.Message(); len(m.UsersJoined) > 0 {
+		for i := range m.UsersJoined {
+			joiners = append(joiners, &m.UsersJoined[i])
+		}
+	} else if m.UserJoined != nil {
+		joiners = append(joiners, m.UserJoined)
+	} else if ctx.Sender() != nil {
+		joiners = append(joiners, ctx.Sender())
+	}
+	for _, joiner := range joiners {
+		if joiner.ID == bot.Telegram.Me.ID {
+			continue
+		}
+		// skip members with a running ticket; an expired one may be left
+		// over when the kick could not run (member already gone)
+		pending := JoinTicket{Sender: joiner, Message: &tb.Message{Chat: ctx.Chat()}}
+		if bot.Bunt.Get(&pending) == nil && time.Since(pending.CreatedTimestamp) < defaultTicketDuration {
+			continue
+		}
+		if err := bot.chargeJoiner(ctx, group, id, joiner); err != nil {
+			log.Errorf("[TICKET] could not charge %s: %v", GetUserStr(joiner), err)
+		}
+	}
+	return ctx, nil
+}
+
+// chargeJoiner sends joiner the ticket invoice (or a pay button) and starts
+// the timer that removes them if they do not pay.
+func (bot *TipBot) chargeJoiner(ctx intercept.Context, group *Group, id string, joiner *tb.User) error {
+	var user *lnbits.User
+	if sender := ctx.Sender(); sender != nil && sender.ID == joiner.ID {
+		user = LoadUser(ctx)
+	} else if u, err := GetLnbitsUser(joiner, *bot); err == nil {
+		user = u
+	}
 	// if the user does not have an account we put his Telegram user here
 	// because we will need it after the invoice callback has been triggered in stopJoinTicketTimer
 	if user == nil {
 		user = &lnbits.User{
 			ID:       "",
-			Telegram: ctx.Message().Sender,
+			Telegram: joiner,
 		}
 	}
 
 	ownerUser, err := GetUser(group.Owner, *bot)
 	if err != nil {
 		log.Errorln("[TICKET] Error: no owner found")
-		return ctx, err
+		return err
 	}
 	ticket := JoinTicket{
-		Sender: ctx.Sender(),
+		Sender: joiner,
 		Ticket: group.Ticket,
 	}
 	// group owner creates invoice
@@ -64,14 +106,14 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 	if err != nil {
 		errmsg := fmt.Sprintf("[handleTelegramNewMember] Could not create an invoice: %s", err.Error())
 		log.Errorln(errmsg)
-		return ctx, err
+		return err
 	}
 
 	// send the owner invoice to chat
 	// TicketEvent is used for callback button (if user has balance)
 	// One event per joiner: keyed by the group alone, a second joiner would
 	// overwrite the first one's event and pay button.
-	eventID := fmt.Sprintf("%s_%d", id, ctx.Sender().ID)
+	eventID := fmt.Sprintf("%s_%d", id, joiner.ID)
 	ticketEvent := TicketEvent{
 		// invoice event is used for invoice callbacks (do not kick if invoice is paid)
 		InvoiceEvent: &InvoiceEvent{
@@ -89,7 +131,7 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 		Group: group,
 		Base:  storage.New(storage.ID(fmt.Sprintf("ticket-event:%s", eventID))),
 	}
-	captionText := fmt.Sprintf("⚠️ %s, this group requires you to pay *%d sat* to join. You have 15 minutes to pay or you will be kicked for one day.", GetUserStrMd(ctx.Message().Sender), ticket.Ticket.Price)
+	captionText := fmt.Sprintf("⚠️ %s, this group requires you to pay *%d sat* to join. You have 15 minutes to pay or you will be kicked for one day.", GetUserStrMd(joiner), ticket.Ticket.Price)
 
 	var balance int64 = 0
 	if user.ID != "" {
@@ -99,8 +141,8 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 		if err != nil {
 			errmsg := fmt.Sprintf("[/group] Error: Could not get user balance: %s", err.Error())
 			log.Errorln(errmsg)
-			bot.trySendMessage(ctx.Message().Sender, Translate(ctx, "errorTryLaterMessage"))
-			return ctx, errors.New(errors.GetBalanceError, err)
+			bot.trySendMessage(joiner, Translate(ctx, "errorTryLaterMessage"))
+			return errors.New(errors.GetBalanceError, err)
 		}
 	} else {
 		balance = 0
@@ -114,7 +156,7 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 		// create qr code
 		qr, err := qrcode.Encode(invoice.PaymentRequest, qrcode.Medium, 256)
 		if err != nil {
-			return ctx, err
+			return err
 		}
 		entryMessage := &tb.Photo{
 			File:    tb.File{FileReader: bytes.NewReader(qr)},
@@ -127,19 +169,19 @@ func (bot *TipBot) handleTelegramNewMember(ctx intercept.Context) (intercept.Con
 	ticket.CreatedTimestamp = time.Now()
 	err = bot.Bunt.Set(&ticket)
 	if err != nil {
-		return ctx, err
+		return err
 	}
 	// save invoice struct for later use
 	err = ticketEvent.Set(&ticketEvent, bot.Bunt)
 	if err != nil {
-		return ctx, err
+		return err
 	}
 	err = ticketEvent.InvoiceEvent.Set(ticketEvent.InvoiceEvent, bot.Bunt)
 	if err != nil {
-		return ctx, err
+		return err
 	}
 	bot.startTicketCallbackFunctionTimer(ticket)
-	return ctx, nil
+	return nil
 }
 
 // stopTicketTimer will load the timer function based on the event.

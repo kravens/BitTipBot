@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/eko/gocache/store"
 	tb "gopkg.in/lightningtipbot/telebot.v3"
 
@@ -79,6 +81,11 @@ func (w Lnurl) Handle(writer http.ResponseWriter, request *http.Request) {
 	var err error
 	var response interface{}
 	username := mux.Vars(request)["username"]
+	// Telegram usernames have at most 32 characters, the anon ids at most 66
+	if len(username) == 0 || len(username) > maxUsernameLength {
+		api.NotFoundHandler(writer, fmt.Errorf("[handleLnUrl] invalid username"))
+		return
+	}
 	if request.URL.RawQuery == "" {
 		response, err = w.serveLNURLpFirst(username)
 	} else {
@@ -167,29 +174,54 @@ func (w Lnurl) Handle(writer http.ResponseWriter, request *http.Request) {
 		api.NotFoundHandler(writer, err)
 	}
 }
-func (w Lnurl) getMetaDataCached(username string) lnurl.Metadata {
-	key := fmt.Sprintf("lnurl_metadata_%s", username)
+
+const maxUsernameLength = 100
+
+// publicInvoiceLimiter caps how fast outsiders can make the bot create LNURL
+// invoices. The bot is one client to LNbits, which allows about 200 requests
+// a minute per route; without a cap an invoice flood makes the Telegram
+// users' own invoice and pay calls fail.
+// ponytail: one global bucket, so a flood still delays other LNURL payers;
+// add per-target-user buckets if that happens in practice.
+var publicInvoiceLimiter = rate.NewLimiter(rate.Limit(1), 20)
+
+// getMetaDataCached returns the LNURL metadata of an existing user. Unknown
+// users get an error and nothing is cached, and the cache key is the user's
+// canonical name, so outsiders cannot fill the cache with made-up names or
+// with case variants of a real one.
+func (w Lnurl) getMetaDataCached(username string) (lnurl.Metadata, error) {
+	user, tx := db.FindUser(w.database, username)
+	if tx.Error != nil || user.Telegram == nil {
+		return lnurl.Metadata{}, fmt.Errorf("user %s not found", username)
+	}
+	name := username
+	_, numeric := strconv.ParseInt(username, 10, 64)
+	if !strings.HasPrefix(username, "0x") && numeric != nil && user.Telegram.Username != "" {
+		// plain usernames (any case) and 1x uuids are shown as the username;
+		// anon ids stay anonymous
+		name = user.Telegram.Username
+	}
+	key := fmt.Sprintf("lnurl_metadata_%s", name)
 
 	// load metadata from cache
 	if m, err := w.cache.Get(key); err == nil {
-		return m.(lnurl.Metadata)
+		return m.(lnurl.Metadata), nil
 	}
 
 	// otherwise, create new metadata
-	metadata := w.metaData(username)
+	metadata := lnurl.Metadata{
+		Description:      fmt.Sprintf("Pay to %s@%s", name, w.callbackHostname.Hostname()),
+		LightningAddress: fmt.Sprintf("%s@%s", name, w.callbackHostname.Hostname()),
+	}
 
 	// load the user profile picture
 	if internal.Configuration.Bot.LNURLSendImage {
-		// get the user from the database
-		user, tx := db.FindUser(w.database, username)
-		if tx.Error == nil && user.Telegram != nil {
-			addImageToMetaData(w.telegram, &metadata, username, user.Telegram)
-		}
+		addImageToMetaData(w.telegram, &metadata, name, user.Telegram)
 	}
 
 	// save into cache
 	runtime.IgnoreError(w.cache.Set(key, metadata, &store.Options{Expiration: 30 * time.Minute}))
-	return metadata
+	return metadata, nil
 }
 
 // we have our custom LNURLPayParams response object here because we want to
@@ -218,7 +250,12 @@ func (w Lnurl) serveLNURLpFirst(username string) (*LNURLPayParamsCustom, error) 
 	}
 
 	// produce the metadata including the image
-	metadata := w.getMetaDataCached(username)
+	metadata, err := w.getMetaDataCached(username)
+	if err != nil {
+		return &LNURLPayParamsCustom{
+			LNURLResponse: lnurl.LNURLResponse{Status: api.StatusError, Reason: "Invalid user."},
+		}, err
+	}
 
 	// check if the user has added a nostr key for nip57
 	var allowNostr bool = false
@@ -294,6 +331,15 @@ func (w Lnurl) serveLNURLpSecond(username string, amount_msat int64, comment str
 	} else {
 		user = user2
 	}
+	if zapEvent.Sig != "" {
+		if err := w.checkZapRecipient(user, zapTags(zapEvent.Tags, "p")[0][1]); err != nil {
+			return &lnurl.LNURLPayValues{
+				LNURLResponse: lnurl.LNURLResponse{
+					Status: api.StatusError,
+					Reason: "Zap request is not for this user."},
+			}, err
+		}
+	}
 	// user is ok now create invoice
 	// set wallet lnbits client
 
@@ -339,10 +385,14 @@ func (w Lnurl) serveLNURLpSecond(username string, amount_msat int64, comment str
 	} else {
 		// calculate normal LNURL descriptionhash
 		// the same description_hash needs to be built in the second request
-		metadata := w.getMetaDataCached(username)
+		metadata, err := w.getMetaDataCached(username)
+		if err != nil {
+			return &lnurl.LNURLPayValues{
+				LNURLResponse: lnurl.LNURLResponse{Status: api.StatusError, Reason: "Invalid user."},
+			}, err
+		}
 
 		var payerDataByte []byte
-		var err error
 		if payerData.Email != "" || payerData.LightningAddress != "" || payerData.FreeName != "" {
 			payerDataByte, err = json.Marshal(payerData)
 			if err != nil {
@@ -358,13 +408,21 @@ func (w Lnurl) serveLNURLpSecond(username string, amount_msat int64, comment str
 		}
 	}
 
+	if !publicInvoiceLimiter.Allow() {
+		return &lnurl.LNURLPayValues{
+			LNURLResponse: lnurl.LNURLResponse{
+				Status: api.StatusError,
+				Reason: "Too many requests, please try again in a minute."},
+		}, fmt.Errorf("[serveLNURLpSecond] invoice rate limit reached")
+	}
 	invoice, err := w.c.InvoiceForWallet(
 		user.Wallet.Inkey,
 		lnbits.InvoiceParams{
 			Amount:          amount_msat / 1000,
 			Out:             false,
 			DescriptionHash: descriptionHash,
-			Webhook:         w.WebhookServer})
+			Webhook:         w.WebhookServer,
+			Public:          true})
 	if err != nil {
 		err = fmt.Errorf("[serveLNURLpSecond] Couldn't create invoice: %v", err.Error())
 		resp = &lnurl.LNURLPayValues{
@@ -444,25 +502,6 @@ func (w Lnurl) DescriptionHash(metadata lnurl.Metadata, payerData string) (strin
 		hashString = hex.EncodeToString(hash[:])
 	}
 	return hashString, nil
-}
-
-// metaData returns the metadata that is sent in the first response
-// and is used again in the second response to verify the description hash
-func (w Lnurl) metaData(username string) lnurl.Metadata {
-	// this is a bit stupid but if the address is a UUID starting with 1x...
-	// we actually want to find the users username so it looks nicer in the
-	// metadata description
-	if strings.HasPrefix(username, "1x") {
-		user, _ := db.FindUser(w.database, username)
-		if user.Telegram.Username != "" {
-			username = user.Telegram.Username
-		}
-	}
-
-	return lnurl.Metadata{
-		Description:      fmt.Sprintf("Pay to %s@%s", username, w.callbackHostname.Hostname()),
-		LightningAddress: fmt.Sprintf("%s@%s", username, w.callbackHostname.Hostname()),
-	}
 }
 
 // addImageMetaData add images an image to the LNURL metadata

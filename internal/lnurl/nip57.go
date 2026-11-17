@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/LightningTipBot/LightningTipBot/internal/lnbits"
 
 	"github.com/nbd-wtf/go-nostr"
 )
@@ -56,6 +59,30 @@ func checkZapRequest(ev nostr.Event, amountMsat int64) error {
 	}
 	if amount := zapTags(ev.Tags, "amount"); len(amount) > 0 && amount[0][1] != strconv.FormatInt(amountMsat, 10) {
 		return fmt.Errorf("zap request amount does not match the invoice amount")
+	}
+	return nil
+}
+
+// checkZapRecipient makes sure the bot signs zap receipts only for the
+// recipient of the payment. Otherwise anyone could pay their own lightning
+// address with a zap request naming another bot user and get a receipt,
+// signed by the bot, that clients count as a zap of that user's note.
+// Recipients without a registered key keep working, but a key that another
+// bot user registered cannot be named.
+func (w Lnurl) checkZapRecipient(user *lnbits.User, p string) error {
+	if user.Settings != nil && user.Settings.Nostr.PubKey != "" {
+		if !strings.EqualFold(user.Settings.Nostr.PubKey, p) {
+			return fmt.Errorf("zap request p tag %s is not the recipient's key", p)
+		}
+		return nil
+	}
+	var n int64
+	tx := w.database.Model(&lnbits.Settings{}).Where("nostr_pub_key = ? COLLATE NOCASE AND id <> ?", p, user.ID).Count(&n)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if n > 0 {
+		return fmt.Errorf("zap request p tag %s belongs to another user", p)
 	}
 	return nil
 }

@@ -59,6 +59,8 @@ type SendData struct {
 
 // sendHandler invoked on "/send 123 @user" command
 func (bot *TipBot) sendHandler(ctx intercept.Context) (intercept.Context, error) {
+	// fresh per message, see shopKeyboard
+	sendConfirmationMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
 	bot.anyTextHandler(ctx)
 	user := LoadUser(ctx)
 	if user.Wallet.ID == "" {
@@ -251,7 +253,7 @@ func (bot *TipBot) keyboardSendHandler(ctx intercept.Context) (intercept.Context
 		return ctx, err
 	}
 	SetUserState(user, bot, lnbits.UserEnterUser, string(stateDataJson))
-	sendToButtons = bot.makeContactsButtons(ctx)
+	sendToButtons := bot.makeContactsButtons(ctx)
 
 	// if no contact is found (one entry will always be inside, it's the enter user button)
 	// immediatelly go to the send handler
@@ -263,6 +265,8 @@ func (bot *TipBot) keyboardSendHandler(ctx intercept.Context) (intercept.Context
 	// Attention! We need to ues the original Telegram.Send command here!
 	// bot.trySendMessage will replace the keyboard with the default one and we want to send a different keyboard here
 	// this is suboptimal because Telegram.Send is not rate limited etc. but it's the only way to send a custom keyboard for now
+	sendToMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
+	sendToMenu.Reply(buttonWrapper(sendToButtons, sendToMenu, 3)...)
 	_, err = bot.Telegram.Send(user.Telegram, Translate(ctx, "enterUserMessage"), sendToMenu)
 	if err != nil {
 		log.Errorln(err.Error())

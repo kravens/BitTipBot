@@ -54,6 +54,8 @@ type PayData struct {
 
 // payHandler invoked on "/pay lnbc..." command
 func (bot *TipBot) payHandler(ctx intercept.Context) (intercept.Context, error) {
+	// fresh per message, see shopKeyboard
+	paymentConfirmationMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
 	// check and print all commands
 	bot.anyTextHandler(ctx)
 	user := LoadUser(ctx)

@@ -4,138 +4,154 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 
 	"github.com/gorilla/mux"
-
-	cmap "github.com/orcaman/concurrent-map"
 	log "github.com/sirupsen/logrus"
 )
 
-var mutexMap cmap.ConcurrentMap
-var mutexMapSync sync.Mutex
-
-func init() {
-	mutexMap = cmap.New()
-	mutexMapSync = sync.Mutex{}
+// entry is one named lock. refs counts the holder and all waiters, so the
+// entry stays in the map (and every caller uses the same sync.Mutex) until
+// the last of them has unlocked.
+type entry struct {
+	mu   sync.Mutex
+	refs int
+	held bool
 }
+
+var (
+	mapMu sync.Mutex
+	locks = map[string]*entry{}
+	// soft counts how often a request (uid) has locked an object, so handlers
+	// that call each other with the same context do not deadlock on it.
+	soft = map[string]int{}
+)
+
+// IsEmpty reports whether no lock is held or waited for.
 func IsEmpty() bool {
-	return mutexMap.Count() == 0
+	mapMu.Lock()
+	defer mapMu.Unlock()
+	return len(locks) == 0
+}
+
+func keys() []string {
+	mapMu.Lock()
+	defer mapMu.Unlock()
+	k := make([]string, 0, len(locks))
+	for s := range locks {
+		k = append(k, s)
+	}
+	sort.Strings(k)
+	return k
 }
 
 func ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte(fmt.Sprintf("Current number of locks: %d\nLocks: %+v\nUse /mutex/unlock/{id} endpoint to mutex", len(mutexMap.Keys()), mutexMap.Keys())))
+	k := keys()
+	w.Write([]byte(fmt.Sprintf("Current number of locks: %d\nLocks: %+v\nUse /mutex/unlock/{id} endpoint to mutex", len(k), k)))
 }
 
 func UnlockHTTP(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	if m, ok := mutexMap.Get(vars["id"]); ok {
-		m.(*sync.Mutex).Unlock()
-		w.Write([]byte(fmt.Sprintf("Unlocked mutex %s.\nCurrent number of locks: %d\nLocks: %+v",
-			vars["id"], len(mutexMap.Keys()), mutexMap.Keys())))
+	id := mux.Vars(r)["id"]
+	if !Unlock(id) {
+		w.Write([]byte(fmt.Sprintf("Mutex %s not found!", id)))
 		return
 	}
-	w.Write([]byte(fmt.Sprintf("Mutex %s not found!", vars["id"])))
+	k := keys()
+	w.Write([]byte(fmt.Sprintf("Unlocked mutex %s.\nCurrent number of locks: %d\nLocks: %+v", id, len(k), k)))
 }
 
-// checkSoftLock checks in mutexMap how often an existing mutex was already SoftLocked.
-// The counter is there to avoid multiple recursive locking of an object in the mutexMap.
-// This happens if multiple handlers call each other and try to lock/unlock multiple times
-// the same mutex.
-func checkSoftLock(s string) int {
-	if v, ok := mutexMap.Get(fmt.Sprintf("nLocks:%s", s)); ok {
-		return v.(int)
-	}
-	return 0
-}
-
-// LockWithContext locks a mutex only if it hasn't been locked before in a context.
-// LockWithContext should be used to lock objects like faucets etc.
-// The context carries a uid that is unique the each request (message, button press, etc.).
-// If the uid has a lock already *for a certain object*, it increments the
-// nLocks in the mutexMap. If not, it locks the object. This is supposed to lock only if nLock == 0.
-func LockWithContext(ctx context.Context, s string) {
-	uid := ctx.Value("uid").(string)
+func softKey(ctx context.Context, s string) string {
+	uid, _ := ctx.Value("uid").(string)
 	if len(uid) == 0 {
-		log.Error("[Mutex] LockWithContext: uid is empty!")
+		log.Error("[Mutex] context has no uid")
 	}
 	if len(s) == 0 {
-		log.Error("[Mutex] LockWithContext: s is empty!")
+		log.Error("[Mutex] lock name is empty")
 	}
-	// sync mutex to sync checkSoftLock with the increment of nLocks
-	// same user can't lock the same object multiple times
-	Lock(fmt.Sprintf("mutex-sync:%s:%s", s, uid))
-	var nLocks = checkSoftLock(uid)
-	if nLocks == 0 {
+	return uid + "|" + s
+}
+
+// LockWithContext locks s unless the request in ctx already holds it.
+// LockWithContext should be used to lock objects like faucets etc. The
+// context carries a uid that is unique to each request (message, button
+// press, etc.); nested handlers of the same request only count up.
+func LockWithContext(ctx context.Context, s string) {
+	k := softKey(ctx, s)
+	mapMu.Lock()
+	n := soft[k]
+	soft[k] = n + 1
+	mapMu.Unlock()
+	if n == 0 {
 		Lock(s)
 	} else {
-		log.Tracef("[Mutex] Skip lock (nLocks: %d)", nLocks)
+		log.Tracef("[Mutex] Skip lock %s (nLocks: %d)", s, n)
 	}
-	nLocks++
-	mutexMap.Set(fmt.Sprintf("nLocks:%s", uid), nLocks)
-	Unlock(fmt.Sprintf("mutex-sync:%s:%s", s, uid))
 }
 
-// UnlockWithContext unlock a mutex only if it has been locked once within a context.
-// If it has been locked more than once
-// it only decrements nLocks and skips the unlock of the mutex. This is supposed to unlock only for
-// nLocks == 1
+// UnlockWithContext undoes one LockWithContext and unlocks s when the
+// request's last hold on it is released.
 func UnlockWithContext(ctx context.Context, s string) {
-	uid := ctx.Value("uid").(string)
-	if len(uid) == 0 {
-		log.Error("[Mutex] UnlockWithContext: uid is empty!")
+	k := softKey(ctx, s)
+	mapMu.Lock()
+	n := soft[k]
+	if n == 0 {
+		mapMu.Unlock()
+		log.Errorf("[Mutex] UnlockWithContext %s without a lock. Skip.", s)
 		return
 	}
-	if len(s) == 0 {
-		log.Error("[Mutex] UnlockWithContext: s is empty!")
-		return
-	}
-	Lock(fmt.Sprintf("mutex-sync:%s:%s", s, uid))
-	var nLocks = checkSoftLock(uid)
-	nLocks--
-	mutexMap.Set(fmt.Sprintf("nLocks:%s", uid), nLocks)
-	if nLocks == 0 {
-		Unlock(s)
-		mutexMap.Remove(fmt.Sprintf("nLocks:%s", uid))
+	n--
+	if n == 0 {
+		delete(soft, k)
 	} else {
-		log.Tracef("[Mutex] Skip unlock (nLocks: %d)", nLocks)
+		soft[k] = n
 	}
-	Unlock(fmt.Sprintf("mutex-sync:%s:%s", s, uid))
-	//mutexMap.Remove(fmt.Sprintf("mutex-sync:%s:%s", s, uid))
+	mapMu.Unlock()
+	if n == 0 {
+		Unlock(s)
+	} else {
+		log.Tracef("[Mutex] Skip unlock %s (nLocks: %d)", s, n)
+	}
 }
 
-// Lock locks a mutex in the mutexMap. If the mutex is already in the map, it locks the current call.
-// After it another call unlocks the mutex (and deletes it from the mutexMap) the mutex written again into the mutexMap.
-// If the mutex was not in the mutexMap before, a new mutext is created and locked and written into the mutexMap.
+// Lock blocks until the named lock s is free and takes it.
 func Lock(s string) {
 	log.Tracef("[Mutex] Attempt Lock %s", s)
-	if m, ok := mutexMap.Get(s); ok {
-		m.(*sync.Mutex).Lock()
-		// write into mutex map
-		mutexMapSync.Lock()
-		mutexMap.Set(s, m)
-		mutexMapSync.Unlock()
-	} else {
-		m := &sync.Mutex{}
-		m.Lock()
-		// write into mutex map
-		mutexMapSync.Lock()
-		mutexMap.Set(s, m)
-		mutexMapSync.Unlock()
+	mapMu.Lock()
+	e := locks[s]
+	if e == nil {
+		e = &entry{}
+		locks[s] = e
 	}
+	e.refs++
+	mapMu.Unlock()
+
+	e.mu.Lock()
+
+	mapMu.Lock()
+	e.held = true
+	mapMu.Unlock()
 	log.Tracef("[Mutex] Locked %s", s)
 }
 
-// Unlock unlocks a mutex in the mutexMap.
-func Unlock(s string) {
-	mutexMapSync.Lock()
-	if m, ok := mutexMap.Get(s); ok {
-		mutexMap.Remove(s)
-		m.(*sync.Mutex).Unlock()
-		log.Tracef("[Mutex] Unlocked %s", s)
-	} else {
-		// this should never happen. Mutex should have been in the mutexMap.
-		log.Errorf("[Mutex] ⚠️⚠️⚠️ Unlock %s not in mutexMap. Skip.", s)
+// Unlock releases the named lock s. Unlocking a lock that is not held is
+// logged and ignored (sync.Mutex would abort the whole process instead).
+// It reports whether a lock was released.
+func Unlock(s string) bool {
+	mapMu.Lock()
+	e := locks[s]
+	if e == nil || !e.held {
+		mapMu.Unlock()
+		log.Errorf("[Mutex] ⚠️⚠️⚠️ Unlock %s not held. Skip.", s)
+		return false
 	}
-	mutexMapSync.Unlock()
+	e.held = false
+	e.refs--
+	if e.refs == 0 {
+		delete(locks, s)
+	}
+	mapMu.Unlock()
+	e.mu.Unlock()
+	log.Tracef("[Mutex] Unlocked %s", s)
+	return true
 }

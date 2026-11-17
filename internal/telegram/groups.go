@@ -252,6 +252,8 @@ func (bot *TipBot) groupSendPayButtonHandler(ctx intercept.Context, ticket Ticke
 	return ctx, nil
 }
 func (bot *TipBot) getSendPayButton(ctx intercept.Context, ticket TicketEvent) (string, *tb.ReplyMarkup) {
+	// fresh per message, see shopKeyboard
+	ticketPayConfirmationMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
 	// object that holds all information about the send payment
 	// // // create inline buttons
 	btnPayTicket := ticketPayConfirmationMenu.Data(Translate(ctx, "payButtonMessage"), "pay_ticket", ticket.Base.ID)

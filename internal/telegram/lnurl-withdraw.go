@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/network"
@@ -137,6 +136,8 @@ func (bot *TipBot) lnurlWithdrawHandler(ctx intercept.Context, withdrawParams *L
 
 // lnurlWithdrawHandlerWithdraw is invoked when the user has delivered an amount and is ready to pay
 func (bot *TipBot) lnurlWithdrawHandlerWithdraw(ctx intercept.Context) (intercept.Context, error) {
+	// fresh per message, see shopKeyboard
+	withdrawConfirmationMenu := &tb.ReplyMarkup{ResizeKeyboard: true}
 	m := ctx.Message()
 	user := LoadUser(ctx)
 	if user.Wallet.ID == "" {
@@ -294,7 +295,7 @@ func (bot *TipBot) confirmWithdrawHandler(ctx intercept.Context) (intercept.Cont
 		bot.editSingleButton(ctx, c.Message, EditSingleButtonParams{Message: lnurlWithdrawState.Message, ButtonText: i18n.Translate(lnurlWithdrawState.LanguageCode, "errorTryLaterMessage")})
 		return ctx, errors.New(errors.UnknownError, err)
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := network.ReadBody(res.Body)
 	if err != nil {
 		log.Errorf("[lnurlWithdrawHandlerWithdraw] Error: %s", err.Error())
 		// bot.trySendMessage(c.Sender, Translate(handler.Ctx, "errorTryLaterMessage"))

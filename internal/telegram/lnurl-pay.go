@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -182,7 +181,7 @@ func (bot *TipBot) lnurlPayHandlerSend(ctx intercept.Context) (intercept.Context
 		bot.editOrSend(statusMsg, m.Sender, Translate(ctx, "errorTryLaterMessage"))
 		return ctx, err
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := network.ReadBody(res.Body)
 	if err != nil {
 		log.Errorf("[lnurlPayHandlerSend] Error: %s", err.Error())
 		bot.editOrSend(statusMsg, m.Sender, Translate(ctx, "errorTryLaterMessage"))

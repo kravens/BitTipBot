@@ -101,6 +101,7 @@ type InvoiceParams struct {
 	Webhook             string `json:"webhook,omitempty"`              // the webhook to fire back to when payment is received
 	DescriptionHash     string `json:"description_hash,omitempty"`     // the invoice description hash
 	UnhashedDescription string `json:"unhashed_description,omitempty"` // the unhashed invoice description
+	Public              bool   `json:"-"`                              // requested by an outsider (LNURL-pay), polled from a separate pool
 }
 
 type PaymentParams struct {

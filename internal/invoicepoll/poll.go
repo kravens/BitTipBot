@@ -22,9 +22,15 @@ type Status struct {
 	AmountMsat int64
 }
 
-// slots caps the number of running watches: anyone can request invoices
-// through LNURL-pay, and every watch costs a goroutine and LNbits requests.
-var slots = make(chan struct{}, 1000)
+// slots caps the number of running watches, since every watch costs a
+// goroutine and LNbits requests. Anyone on the internet can request invoices
+// through LNURL-pay, so those get their own smaller pool: a flood of unpaid
+// LNURL invoices must not leave the bot's own invoices (tickets, inline
+// receive, /invoice) unwatched.
+var (
+	slots       = make(chan struct{}, 1000)
+	publicSlots = make(chan struct{}, 300)
+)
 
 // Watch calls check until it reports the payment as settled or deadline
 // passes, then calls PaidHook. The interval grows by half each round, up to
@@ -33,11 +39,20 @@ var slots = make(chan struct{}, 1000)
 // list in buntdb if that turns out to matter. Without a free slot the invoice
 // is not watched and only the webhook can report it.
 func Watch(paymentHash string, deadline time.Time, interval time.Duration, check func() (Status, error)) {
+	watch(slots, paymentHash, deadline, interval, check)
+}
+
+// WatchPublic is Watch for invoices that outsiders can create (LNURL-pay).
+func WatchPublic(paymentHash string, deadline time.Time, interval time.Duration, check func() (Status, error)) {
+	watch(publicSlots, paymentHash, deadline, interval, check)
+}
+
+func watch(pool chan struct{}, paymentHash string, deadline time.Time, interval time.Duration, check func() (Status, error)) {
 	select {
-	case slots <- struct{}{}:
-		defer func() { <-slots }()
+	case pool <- struct{}{}:
+		defer func() { <-pool }()
 	default:
-		log.Warnf("[invoicepoll] %d watches running, not watching %s", cap(slots), paymentHash)
+		log.Warnf("[invoicepoll] %d watches running, not watching %s", cap(pool), paymentHash)
 		return
 	}
 	for time.Now().Before(deadline) {

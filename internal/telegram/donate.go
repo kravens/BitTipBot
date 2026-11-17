@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fiatjaf/go-lnurl"
+	decodepay "github.com/fiatjaf/ln-decodepay"
 
+	"github.com/LightningTipBot/LightningTipBot/internal/network"
 	"github.com/LightningTipBot/LightningTipBot/internal/telegram/intercept"
 
 	"github.com/LightningTipBot/LightningTipBot/internal/errors"
@@ -40,6 +42,8 @@ func helpDonateUsage(ctx context.Context, errormsg string) string {
 	}
 }
 
+var donationHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, error) {
 	// preserve existing behaviour that logs any text and loads user
 	m := ctx.Message()
@@ -54,6 +58,9 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 	if (err != nil || amount < 1) && m.Chat.Type == tb.ChatPrivate {
 		_, err = bot.askForAmount(ctx, "", "CreateDonationState", 0, 0, m.Text)
 		return ctx, err
+	}
+	if err != nil || amount < 1 {
+		return ctx, errors.Create(errors.InvalidAmountError)
 	}
 	// convert sats -> millisats (existing behaviour)
 	amount = amount * 1000
@@ -85,7 +92,7 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 	q.Set("comment", fmt.Sprintf("from %s via bot %s", GetUserStr(user.Telegram), GetUserStr(bot.Telegram.Me)))
 	req.URL.RawQuery = q.Encode()
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := donationHTTPClient.Do(req)
 	if err != nil {
 		log.Errorln(err)
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
@@ -93,7 +100,7 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := network.ReadBody(resp.Body)
 	if err != nil {
 		log.Errorln(err)
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
@@ -111,6 +118,15 @@ func (bot TipBot) donationHandler(ctx intercept.Context) (intercept.Context, err
 		log.Errorln("lnurl pay endpoint returned an error or no invoice:", string(body))
 		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
 		return ctx, fmt.Errorf("lnurl pay endpoint error")
+	}
+
+	// The invoice is paid without a confirmation, so it must be for exactly
+	// the amount the user asked to donate.
+	invoice, err := decodepay.Decodepay(string(pv.PR))
+	if err != nil || invoice.MSatoshi != amount {
+		log.Errorf("[/donate] invoice from donation endpoint is not for %d msat: %v", amount, err)
+		bot.tryEditMessage(msg, Translate(ctx, "donationErrorMessage"))
+		return ctx, fmt.Errorf("donation invoice amount mismatch")
 	}
 
 	// pay the returned invoice
@@ -141,12 +157,12 @@ func (bot TipBot) parseCmdDonHandler(ctx intercept.Context) error {
 		// The caller of this handler should treat non-nil as "did not handle".
 		return fmt.Errorf("skipped donation conversion for reply-to-other-user")
 	}
-	
+
 	// SAFETY CHECK -- only rewrite message if the original command really was /donate
 	if !strings.HasPrefix(m.Text, "/donate") {
 		return fmt.Errorf("not a donation command; skipping donation handler")
 	}
-	
+
 	// try to extract amount (if not present, decodeAmountFromCommand will return error)
 	amount, err := decodeAmountFromCommand(m.Text)
 	if err != nil || amount < 1 {

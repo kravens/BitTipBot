@@ -203,14 +203,25 @@ func (bot *TipBot) acceptInlineCashuHandler(ctx intercept.Context) (intercept.Co
 		bot.tryEditMessage(c.Message, inlineCashu.Message, bot.makeCashuKeyboard(ctx, inlineCashu.ID))
 	}
 
-	// Create wallet for recipient if needed
-	if !to.Initialized {
-		_, err = bot.CreateWalletForTelegramUser(to.Telegram)
+	// Create wallet for recipient if needed. Use the user that comes back:
+	// the one in ctx was loaded before the wallet existed and has no keys.
+	if existing, exists := bot.UserExists(to.Telegram); exists {
+		to = existing
+	} else {
+		created, err := bot.CreateWalletForTelegramUser(to.Telegram)
 		if err != nil {
 			log.Errorf("[cashu claim] Failed to create wallet: %s", err.Error())
+			restoreShare()
 			return ctx, err
 		}
-		to = LoadUser(ctx) // reload
+		to = created
+	}
+	// The claimer must be able to receive before the sender is charged.
+	if to.Wallet.ID == "" || to.Wallet.Inkey == "" {
+		log.Errorf("[cashu claim] claimer %s has no usable wallet", GetUserStr(to.Telegram))
+		restoreShare()
+		ctx.Context = context.WithValue(ctx, "callback_response", Translate(ctx, "errorTryLaterMessage"))
+		return ctx, errors.Create(errors.UserNoWalletError)
 	}
 
 	// Mint the token now, from the sender's wallet. Deferred to claim so inline
@@ -219,6 +230,7 @@ func (bot *TipBot) acceptInlineCashuHandler(ctx intercept.Context) (intercept.Co
 	quote, err := bot.CashuClient.MintQuote(amount, "sat")
 	if err != nil {
 		log.Errorf("[cashu claim] MintQuote failed: %s", err.Error())
+		restoreShare()
 		ctx.Context = context.WithValue(ctx, "callback_response", Translate(ctx, "cashuMintErrorMessage"))
 		return ctx, err
 	}

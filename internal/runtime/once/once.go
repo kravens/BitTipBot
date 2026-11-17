@@ -22,22 +22,19 @@ func New(objectKey string) {
 // that have already interacted with the object. If the user k2 is in the list,
 // the object is not allowed to accessed again.
 func Once(k1, k2 string) error {
-	i, ok := onceMap.Get(k1)
-	if ok {
-		return setOrReturn(i.(cmap.ConcurrentMap), k2)
+	// SetIfAbsent: two first callers must end up with the same user map
+	if onceMap.SetIfAbsent(k1, cmap.New()) {
+		log.Tracef("[Once] Added key %s to onceMap", k1)
 	}
-	userMap := cmap.New()
-	onceMap.Set(k1, userMap)
-	log.Tracef("[Once] Added key %s to onceMap (len=%d)", k1, len(onceMap.Keys()))
-	return setOrReturn(userMap, k2)
+	i, _ := onceMap.Get(k1)
+	return setOrReturn(i.(cmap.ConcurrentMap), k2)
 }
 
 // setOrReturn sets the key k2 in the map i if it is not already set.
 func setOrReturn(objectMap cmap.ConcurrentMap, k2 string) error {
-	if _, ok := objectMap.Get(k2); ok {
+	if !objectMap.SetIfAbsent(k2, true) {
 		return fmt.Errorf("[Once] %s already consumed object", k2)
 	}
-	objectMap.Set(k2, true)
 	return nil
 }
 
