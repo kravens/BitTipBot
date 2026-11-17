@@ -89,7 +89,7 @@ func TestTrustedHostBypassesCheck(t *testing.T) {
 	}
 	defer l.Close()
 	_, port, _ := net.SplitHostPort(l.Addr().String())
-	Trust("LocalHost.")
+	Trust("LocalHost.:" + port)
 	conn, err := DialContext(context.Background(), "tcp", "localhost:"+port)
 	if err != nil {
 		t.Fatalf("dial to trusted localhost refused: %v", err)
@@ -101,5 +101,19 @@ func TestTrustedHostBypassesCheck(t *testing.T) {
 	if conn, err := DialContext(context.Background(), "tcp", l.Addr().String()); err == nil {
 		conn.Close()
 		t.Error("literal loopback address was accepted")
+	}
+	// another port on the trusted host stays closed
+	other, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	_, otherPort, _ := net.SplitHostPort(other.Addr().String())
+	if conn, err := DialContext(context.Background(), "tcp", "localhost:"+otherPort); err == nil {
+		conn.Close()
+		t.Error("other port on the trusted host was accepted")
+	}
+	if err := CheckHost("localhost:" + otherPort); err == nil {
+		t.Error("CheckHost accepted another port on the trusted host")
 	}
 }

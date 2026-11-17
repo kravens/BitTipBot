@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"strings"
 
@@ -258,7 +257,7 @@ func (bot *TipBot) HandleLNURL(rawlnurl string) (string, lnurl.LNURLParams, erro
 		return rawurl, nil, fmt.Errorf("HTTP error: " + resp.Status)
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := network.ReadBody(resp.Body)
 	if err != nil {
 		return rawurl, nil, err
 	}

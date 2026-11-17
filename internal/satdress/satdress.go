@@ -12,7 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -137,7 +136,7 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := network.ReadBody(resp.Body)
 			text := string(body)
 			if len(text) > 300 {
 				text = text[:300]
@@ -145,7 +144,7 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 			return CheckInvoiceParams{}, fmt.Errorf("call to lnd failed (%d): %s", resp.StatusCode, text)
 		}
 
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := network.ReadBody(resp.Body)
 		if err != nil {
 			return CheckInvoiceParams{}, err
 		}
@@ -193,14 +192,14 @@ func MakeInvoice(params Params) (CheckInvoiceParams, error) {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := network.ReadBody(resp.Body)
 			text := string(body)
 			if len(text) > 300 {
 				text = text[:300]
 			}
 			return CheckInvoiceParams{}, fmt.Errorf("call to lnbits failed (%d): %s", resp.StatusCode, text)
 		}
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := network.ReadBody(resp.Body)
 		if err != nil {
 			return CheckInvoiceParams{}, err
 		}
@@ -264,7 +263,7 @@ func CheckInvoice(params CheckInvoiceParams) (CheckInvoiceParams, error) {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := network.ReadBody(resp.Body)
 			text := string(body)
 			if len(text) > 300 {
 				text = text[:300]
@@ -272,7 +271,7 @@ func CheckInvoice(params CheckInvoiceParams) (CheckInvoiceParams, error) {
 			return CheckInvoiceParams{}, fmt.Errorf("call to lnd failed (%d): %s", resp.StatusCode, text)
 		}
 
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := network.ReadBody(resp.Body)
 		if err != nil {
 			return CheckInvoiceParams{}, err
 		}
@@ -295,14 +294,14 @@ func CheckInvoice(params CheckInvoiceParams) (CheckInvoiceParams, error) {
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode >= 300 {
-			body, _ := ioutil.ReadAll(resp.Body)
+			body, _ := network.ReadBody(resp.Body)
 			text := string(body)
 			if len(text) > 300 {
 				text = text[:300]
 			}
 			return CheckInvoiceParams{}, fmt.Errorf("call to lnbits failed (%d): %s", resp.StatusCode, text)
 		}
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := network.ReadBody(resp.Body)
 		if err != nil {
 			return CheckInvoiceParams{}, err
 		}

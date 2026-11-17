@@ -52,17 +52,21 @@ var dialer = &net.Dialer{
 	},
 }
 
-// trusted holds hostnames that may resolve to a non-public address: the
-// bot's own LNURL and LNbits hosts often point at loopback through the hosts
-// file or split DNS. Filled once at startup by Trust.
+// trusted holds host:port pairs that may resolve to a non-public address:
+// the bot's own LNURL and LNbits hosts often point at loopback through the
+// hosts file or split DNS. Only that port is trusted; trusting the whole host
+// would open every other service on it (with lnbits.url http://127.0.0.1:5000
+// that is all of loopback). Filled once at startup by Trust.
 var trusted = map[string]bool{}
 
-// Trust exempts hosts from the public address check.
-func Trust(hosts ...string) {
-	for _, host := range hosts {
-		if host != "" {
-			trusted[normalizeHost(host)] = true
+// Trust exempts host:port pairs from the public address check.
+func Trust(hostports ...string) {
+	for _, hp := range hostports {
+		host, port, err := net.SplitHostPort(hp)
+		if err != nil || host == "" || port == "" {
+			continue
 		}
+		trusted[net.JoinHostPort(normalizeHost(host), port)] = true
 	}
 }
 
@@ -70,13 +74,13 @@ func normalizeHost(host string) string {
 	return strings.TrimSuffix(strings.ToLower(host), ".")
 }
 
-// isTrusted reports whether addr ("host:port") names a trusted host.
+// isTrusted reports whether addr ("host:port") is a trusted host and port.
 func isTrusted(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		host = addr
+		return false
 	}
-	return trusted[normalizeHost(host)]
+	return trusted[net.JoinHostPort(normalizeHost(host), port)]
 }
 
 var plainDialer = &net.Dialer{Timeout: 10 * time.Second}
