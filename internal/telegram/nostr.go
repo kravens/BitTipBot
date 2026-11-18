@@ -94,7 +94,6 @@ func (bot *TipBot) publishNostrEvent(ev nostr.Event, relays []string) {
 		"wss://relay.damus.io",
 		"wss://nos.lol",
 		"wss://relay.primal.net",
-		"wss://relay.nostr.band",
 		"wss://relay.snort.social",
 		"wss://nostr.mom",
 		"wss://nostr.oxtr.dev",
